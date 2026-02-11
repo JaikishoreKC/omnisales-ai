@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     db_name: str = "omnisales"
     openrouter_api_key: str = ""
     groq_api_key: str = ""
+    groq_model: str = "llama-3.1-8b-instant"
     secret_key: str = ""
     api_secret_key: str = ""  # API key for authentication
     frontend_url: str = "http://localhost:5173"
@@ -16,11 +17,13 @@ class Settings(BaseSettings):
     whatsapp_api_token: str = ""
     whatsapp_phone_id: str = ""
     whatsapp_verify_token: str = ""
+    whatsapp_app_secret: str = ""
     
     # SuperU Voice API
     superu_api_key: str = ""
     superu_from_number: str = ""
     superu_webhook_url: str = ""
+    superu_webhook_secret: str = ""
     
     # Ollama (OLMo-1B)
     ollama_api_url: str = "http://localhost:11434"

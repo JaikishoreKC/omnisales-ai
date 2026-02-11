@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 GROQ_API_KEY = settings.groq_api_key
-GROQ_MODEL = "llama3-8b-8192"
+GROQ_MODEL = settings.groq_model
 OLLAMA_API_URL = settings.ollama_url or settings.ollama_api_url
 OLLAMA_MODEL = "qwen2.5:3b"
 
