@@ -25,6 +25,9 @@ class Product(BaseModel):
     category: str
     price: float
     stock: int
+    description: Optional[str] = None
+    image: Optional[str] = None
+    rating: Optional[float] = 4.5
 
 
 class Order(BaseModel):

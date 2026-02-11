@@ -1,40 +1,156 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getProductById } from '../services/api'
+import { useCart } from '../hooks/useCart'
+import { useToast } from '../context/ToastContext'
+import useChatStore from '../store/chatStore'
+import { sendChatMessage } from '../services/api'
 
 const ProductDetailPage = () => {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { cartItems, addToCart, updateQuantity } = useCart()
+  const { success } = useToast()
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [quantity, setQuantity] = useState(1)
+  const [isSendingToAI, setIsSendingToAI] = useState(false)
+  
+  // Chat store for AI assistant
+  const openAssistant = useChatStore((state) => state.openAssistant)
+  const addMessage = useChatStore((state) => state.addMessage)
+  const setLoadingChat = useChatStore((state) => state.setLoading)
+  const getSessionId = useChatStore((state) => state.getSessionId)
+  
+  // Check if product is already in cart
+  const cartItem = useMemo(
+    () => cartItems.find(item => item.product_id === id),
+    [cartItems, id]
+  )
+  
+  // Sync quantity with cart when product is loaded
+  useEffect(() => {
+    if (cartItem) {
+      console.log('📦 Product found in cart, syncing quantity:', cartItem.quantity)
+      setQuantity(cartItem.quantity)
+    } else {
+      console.log('🆕 Product not in cart, resetting quantity to 1')
+      setQuantity(1)
+    }
+  }, [cartItem])
 
   useEffect(() => {
     const fetchProduct = async () => {
+      console.log('🔍 Fetching product with ID:', id)
       setLoading(true)
       setError(null)
+      setProduct(null) // Clear previous product
       try {
         const data = await getProductById(id)
+        console.log('✅ Product loaded:', data)
         setProduct(data)
       } catch (err) {
-        console.error('Error fetching product:', err)
+        console.error('❌ Error fetching product:', err)
         setError('Product not found')
       } finally {
         setLoading(false)
       }
     }
 
-    fetchProduct()
+    if (id) {
+      fetchProduct()
+    }
   }, [id])
 
   const handleAddToCart = () => {
-    alert(`Added ${quantity} × ${product.name} to cart!`)
+    if (cartItem) {
+      // Update existing cart item
+      updateQuantity(product.product_id, quantity)
+      success(`Updated ${product.name} quantity to ${quantity}!`)
+    } else {
+      // Add new item to cart
+      addToCart(product, quantity)
+      success(`Added ${quantity} × ${product.name} to cart!`)
+    }
   }
 
   const handleBuyNow = () => {
-    alert('Proceeding to checkout...')
+    if (cartItem) {
+      updateQuantity(product.product_id, quantity)
+    } else {
+      addToCart(product, quantity)
+    }
+    success(`Added ${quantity} × ${product.name} to cart!`)
     navigate('/cart')
+  }
+
+  const handleChatWithAI = async () => {
+    if (!product || isSendingToAI) return
+
+    setIsSendingToAI(true)
+
+    // Build contextual message
+    const contextMessage = `I'm viewing this product and would like your help:
+
+Product: ${product.name}
+Category: ${product.category}
+Price: $${product.price}
+Stock: ${product.stock} available
+Rating: ${product.rating || 4.5}/5 stars
+${product.description ? `Description: ${product.description}` : ''}
+
+Please provide detailed information, comparisons with similar products, buying advice, and answer any questions I might have about this product.`
+
+    console.log('🤖 Opening AI assistant with product context')
+    
+    // Open assistant immediately
+    openAssistant()
+    
+    // Add system context message
+    addMessage({
+      role: 'system',
+      content: '📦 Product context loaded. How can I help you with this product?',
+      source: 'context-action'
+    })
+    
+    // Add user's contextual message
+    addMessage({
+      role: 'user',
+      content: contextMessage,
+      source: 'product-page'
+    })
+    
+    // Send to backend
+    setLoadingChat(true)
+    try {
+      const sessionId = getSessionId()
+      const response = await sendChatMessage({
+        user_id: 'user_' + Math.random().toString(36).substr(2, 9),
+        session_id: sessionId,
+        message: contextMessage,
+        channel: 'web'
+      })
+
+      // Add assistant response
+      addMessage({
+        role: 'assistant',
+        content: response.reply,
+        agent: response.agent_used,
+        actions: response.actions,
+        source: 'product-page'
+      })
+    } catch (error) {
+      console.error('Error sending product context:', error)
+      addMessage({
+        role: 'assistant',
+        content: 'I received your product inquiry. How can I assist you?',
+        source: 'product-page'
+      })
+    } finally {
+      setLoadingChat(false)
+      setIsSendingToAI(false)
+    }
   }
 
   if (loading) {
@@ -70,20 +186,32 @@ const ProductDetailPage = () => {
     )
   }
 
-  // Generate product image and details
-  const productImage = `https://via.placeholder.com/600x600?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`
-  const rating = 4.5 + Math.random()
-  const reviews = Math.floor(50 + Math.random() * 500)
+  // MOVED AFTER NULL CHECK - Use product image or generate placeholder
+  const productImage = product.image || `https://via.placeholder.com/600x600?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`
+  // Use product rating or default to 4.5
+  const rating = product.rating || 4.5
+  // Generate consistent review count based on product ID (using deterministic hash)
+  const hashCode = product.product_id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  const reviews = 50 + (hashCode % 450)
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       {/* Breadcrumb */}
       <div className="mb-6 text-sm text-gray-600">
-        <button onClick={() => navigate('/products')} className="hover:text-blue-600">
+        <button onClick={() => navigate('/')} className="hover:text-blue-600 hover:underline">
+          Home
+        </button>
+        <span className="mx-2">›</span>
+        <button onClick={() => navigate('/products')} className="hover:text-blue-600 hover:underline">
           Products
         </button>
         <span className="mx-2">›</span>
-        <span>{product.category}</span>
+        <button 
+          onClick={() => navigate(`/products?category=${product.category}`)} 
+          className="hover:text-blue-600 hover:underline capitalize"
+        >
+          {product.category}
+        </button>
         <span className="mx-2">›</span>
         <span className="text-gray-900">{product.name}</span>
       </div>
@@ -96,6 +224,10 @@ const ProductDetailPage = () => {
               src={productImage}
               alt={product.name}
               className="w-full h-auto rounded-lg"
+              onError={(e) => {
+                e.target.onerror = null // Prevent infinite loop
+                e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="600" height="600"%3E%3Crect width="600" height="600" fill="%23e5e7eb"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="48" fill="%239ca3af"%3E📦%3C/text%3E%3C/svg%3E'
+              }}
             />
           </div>
         </div>
@@ -133,8 +265,7 @@ const ProductDetailPage = () => {
 
           {/* Description */}
           <p className="text-gray-700 mb-6">
-            Premium quality {product.category} from {product.name.split(' ')[1]} brand.
-            Perfect for everyday use with excellent durability and style.
+            {product.description || `Premium quality ${product.category}. Perfect for everyday use with excellent durability and style.`}
           </p>
 
           {/* Quantity */}
@@ -166,7 +297,7 @@ const ProductDetailPage = () => {
               disabled={product.stock === 0}
               className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
             >
-              Add to Cart
+              {cartItem ? 'Update Cart' : 'Add to Cart'}
             </button>
             <button
               onClick={handleBuyNow}
@@ -206,8 +337,12 @@ const ProductDetailPage = () => {
       <div className="mt-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-8 text-white text-center">
         <h2 className="text-2xl font-bold mb-2">Have Questions About This Product?</h2>
         <p className="mb-4">Ask our AI assistant for detailed information, comparisons, or recommendations!</p>
-        <button className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition">
-          💬 Chat with AI
+        <button 
+          onClick={handleChatWithAI}
+          disabled={isSendingToAI}
+          className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {isSendingToAI ? '⏳ Opening Assistant...' : '💬 Chat with AI'}
         </button>
       </div>
     </div>

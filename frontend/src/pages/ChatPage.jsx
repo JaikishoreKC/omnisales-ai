@@ -1,12 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react'
 import MessageBubble from '../components/MessageBubble'
 import { sendChatMessage } from '../services/api'
+import useChatStore from '../store/chatStore'
+import { useConfirm } from '../context/ConfirmContext'
 
 const ChatPage = () => {
-  const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
   const messagesEndRef = useRef(null)
+  const { confirm } = useConfirm()
+
+  // Use Zustand store instead of local state
+  const messages = useChatStore((state) => state.messages)
+  const isLoading = useChatStore((state) => state.isLoading)
+  const sessionId = useChatStore((state) => state.sessionId)
+  const addMessage = useChatStore((state) => state.addMessage)
+  const setLoading = useChatStore((state) => state.setLoading)
+  const getSessionId = useChatStore((state) => state.getSessionId)
+  const clearMessages = useChatStore((state) => state.clearMessages)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -17,22 +27,24 @@ const ChatPage = () => {
   }, [messages])
 
   const handleSend = async () => {
-    if (!input.trim() || loading) return
+    if (!input.trim() || isLoading) return
 
     const userMessage = {
       role: 'user',
       content: input,
-      timestamp: new Date().toISOString()
+      source: 'chat-page'
     }
 
-    setMessages(prev => [...prev, userMessage])
+    addMessage(userMessage)
     setInput('')
     setLoading(true)
 
     try {
+      const sessionId = getSessionId()
+      
       const response = await sendChatMessage({
         user_id: 'user_' + Math.random().toString(36).substr(2, 9),
-        session_id: 'session_' + Date.now(),
+        session_id: sessionId,
         message: input,
         channel: 'web'
       })
@@ -42,18 +54,18 @@ const ChatPage = () => {
         content: response.reply,
         agent: response.agent_used,
         actions: response.actions,
-        timestamp: new Date().toISOString()
+        source: 'chat-page'
       }
 
-      setMessages(prev => [...prev, assistantMessage])
+      addMessage(assistantMessage)
     } catch (error) {
       console.error('Error:', error)
       const errorMessage = {
         role: 'assistant',
         content: 'Sorry, something went wrong. Please try again.',
-        timestamp: new Date().toISOString()
+        source: 'chat-page'
       }
-      setMessages(prev => [...prev, errorMessage])
+      addMessage(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -66,12 +78,39 @@ const ChatPage = () => {
     }
   }
 
+  const handleClearChat = async () => {
+    const confirmed = await confirm({
+      title: 'Clear Conversation',
+      message: 'Are you sure you want to clear the entire conversation? This will also clear the floating widget chat.',
+      confirmText: 'Clear All',
+      cancelText: 'Cancel',
+      type: 'danger'
+    })
+    
+    if (confirmed) {
+      clearMessages()
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       <div className="bg-white shadow">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">OmniSales AI Chat</h1>
-          <p className="text-sm text-gray-600">Your intelligent sales assistant</p>
+        <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">OmniSales AI Chat</h1>
+            <p className="text-sm text-gray-600">
+              Your intelligent sales assistant
+              {sessionId && <span className="ml-2 text-xs text-gray-400">• Session active</span>}
+            </p>
+          </div>
+          {messages.length > 0 && (
+            <button
+              onClick={handleClearChat}
+              className="px-4 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition"
+            >
+              Clear Chat
+            </button>
+          )}
         </div>
       </div>
 
@@ -88,7 +127,7 @@ const ChatPage = () => {
             <MessageBubble key={index} message={message} />
           ))}
 
-          {loading && (
+          {isLoading && (
             <div className="flex justify-start">
               <div className="bg-gray-100 rounded-lg px-4 py-3">
                 <div className="flex space-x-2">
@@ -114,11 +153,11 @@ const ChatPage = () => {
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
               className="flex-1 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={loading}
+              disabled={isLoading}
             />
             <button
               onClick={handleSend}
-              disabled={loading || !input.trim()}
+              disabled={isLoading || !input.trim()}
               className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
             >
               Send

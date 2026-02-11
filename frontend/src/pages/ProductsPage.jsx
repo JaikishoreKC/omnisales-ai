@@ -19,6 +19,14 @@ const ProductsPage = () => {
   ]
 
   const searchQuery = searchParams.get('search') || ''
+  const categoryParam = searchParams.get('category') || 'all'
+
+  // Set category from URL on mount
+  useEffect(() => {
+    if (categoryParam && categoryParam !== selectedCategory) {
+      setSelectedCategory(categoryParam)
+    }
+  }, [categoryParam])
 
   useEffect(() => {
     const fetchProducts = async () => {

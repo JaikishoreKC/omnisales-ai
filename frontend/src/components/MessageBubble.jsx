@@ -1,8 +1,21 @@
 import React from 'react'
 import ProductCard from './ProductCard'
+import { MarkdownText } from '../utils/markdown'
 
 const MessageBubble = ({ message }) => {
   const isUser = message.role === 'user'
+  const isSystem = message.role === 'system'
+
+  // System messages (context notifications)
+  if (isSystem) {
+    return (
+      <div className="flex justify-center my-2">
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-full text-xs font-medium">
+          {message.content}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
@@ -13,7 +26,7 @@ const MessageBubble = ({ message }) => {
             : 'bg-gray-100 text-gray-900'
         }`}
       >
-        <p className="text-sm whitespace-pre-wrap break-words">{message.content}</p>
+        <MarkdownText text={message.content} className="text-sm whitespace-pre-wrap break-words" />
         {message.agent && (
           <p className="text-xs mt-1 opacity-70">
             Agent: {message.agent}

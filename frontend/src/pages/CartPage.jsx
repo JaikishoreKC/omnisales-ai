@@ -1,36 +1,144 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useCart } from '../hooks/useCart'
+import { useAuth } from '../context/AuthContext'
+import { useConfirm } from '../context/ConfirmContext'
+import { useToast } from '../context/ToastContext'
+import useChatStore from '../store/chatStore'
+import { sendChatMessage } from '../services/api'
 
 const CartPage = () => {
   const navigate = useNavigate()
-  const [cartItems, setCartItems] = useState([
-    {
-      id: 1,
-      name: 'MacBook Pro 16"',
-      price: 2499,
-      quantity: 1,
-      image: 'https://via.placeholder.com/80x80?text=MacBook',
-      stock: 15
-    }
-  ])
+  const { cartItems, updateQuantity, removeFromCart, getCartTotal } = useCart()
+  const { isAuthenticated } = useAuth()
+  const { confirm } = useConfirm()
+  const { success } = useToast()
+  const [isSendingToAI, setIsSendingToAI] = useState(false)
+  
+  // Chat store for AI assistant
+  const openAssistant = useChatStore((state) => state.openAssistant)
+  const addMessage = useChatStore((state) => state.addMessage)
+  const setLoadingChat = useChatStore((state) => state.setLoading)
+  const getSessionId = useChatStore((state) => state.getSessionId)
 
-  const updateQuantity = (id, newQuantity) => {
-    if (newQuantity < 1) return
-    setCartItems(items =>
-      items.map(item =>
-        item.id === id ? { ...item, quantity: Math.min(newQuantity, item.stock) } : item
-      )
-    )
-  }
+  // Debug: Log cart items
+  console.log('🛒 CartPage - cartItems:', cartItems)
+  console.log('🛒 CartPage - cartItems.length:', cartItems.length)
 
-  const removeItem = (id) => {
-    setCartItems(items => items.filter(item => item.id !== id))
-  }
-
-  const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0)
+  const subtotal = getCartTotal()
   const shipping = subtotal > 0 ? 0 : 0 // Free shipping
   const tax = subtotal * 0.08 // 8% tax
   const total = subtotal + shipping + tax
+
+  const handleCheckout = () => {
+    if (!isAuthenticated) {
+      navigate('/login')
+    } else {
+      navigate('/checkout')
+    }
+  }
+
+  const handleRemoveFromCart = async (productId, productName) => {
+    const confirmed = await confirm({
+      title: 'Remove Item',
+      message: `Are you sure you want to remove "${productName}" from your cart?`,
+      confirmText: 'Remove',
+      cancelText: 'Keep',
+      type: 'danger'
+    })
+    
+    if (confirmed) {
+      removeFromCart(productId)
+      success('Item removed from cart')
+    }
+  }
+
+  const handleAskAIForHelp = async () => {
+    if (cartItems.length === 0) {
+      success('Add some items to your cart first!')
+      return
+    }
+
+    if (isSendingToAI) return
+    setIsSendingToAI(true)
+
+    // Build cart summary
+    const itemsList = cartItems.map(item => 
+      `- ${item.name} x${item.quantity} ($${item.price} each = $${(item.price * item.quantity).toFixed(2)})`
+    ).join('\\n')
+    
+    const subtotal = getCartTotal()
+    const tax = subtotal * 0.08
+    const total = subtotal + tax
+
+    const contextMessage = `I need help with my shopping cart:
+
+Cart Items (${cartItems.length} items):
+${itemsList}
+
+Cart Summary:
+- Subtotal: $${subtotal.toFixed(2)}
+- Tax (8%): $${tax.toFixed(2)}
+- Total: $${total.toFixed(2)}
+- Shipping: FREE
+
+Please help me with:
+- Product recommendations or alternatives
+- Checkout process guidance
+- Answers to questions about these items
+- Ways to save or bundle deals
+- Any concerns about my cart`
+
+    console.log('🛒 Opening AI assistant with cart context')
+    
+    // Open assistant immediately
+    openAssistant()
+    
+    // Add system context message
+    addMessage({
+      role: 'system',
+      content: '🛒 Cart summary loaded. How can I assist you with your purchase?',
+      source: 'context-action'
+    })
+    
+    // Add user's contextual message
+    addMessage({
+      role: 'user',
+      content: contextMessage,
+      source: 'cart-page'
+    })
+    
+    // Send to backend
+    setLoadingChat(true)
+    try {
+      const sessionId = getSessionId()
+      const response = await sendChatMessage({
+        user_id: 'user_' + Math.random().toString(36).substr(2, 9),
+        session_id: sessionId,
+        message: contextMessage,
+        channel: 'web'
+      })
+
+      // Add assistant response
+      addMessage({
+        role: 'assistant',
+        content: response.reply,
+        agent: response.agent_used,
+        actions: response.actions,
+        source: 'cart-page'
+      })
+    } catch (error) {
+      console.error('Error sending cart context:', error)
+      addMessage({
+        role: 'assistant',
+        content: 'I can see your cart contents. How can I help you with your purchase decision?',
+        source: 'cart-page'
+      })
+    } finally {
+      setLoadingChat(false)
+      setIsSendingToAI(false)
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -55,25 +163,36 @@ const CartPage = () => {
             <div className="bg-white rounded-lg shadow-md">
               {cartItems.map((item) => (
                 <div
-                  key={item.id}
+                  key={item.product_id}
                   className="flex items-center p-6 border-b border-gray-200 last:border-0"
                 >
                   {/* Product Image */}
                   <img
-                    src={item.image}
+                    src={item.image || `https://via.placeholder.com/80x80?text=${encodeURIComponent(item.name.split(' ').slice(0, 2).join(' '))}`}
                     alt={item.name}
-                    className="w-20 h-20 object-cover rounded-lg mr-4"
+                    className="w-20 h-20 object-cover rounded-lg mr-4 cursor-pointer hover:opacity-80 transition"
+                    onClick={() => navigate(`/products/${item.product_id}`)}
+                    onError={(e) => {
+                      // Use a simple colored background as final fallback
+                      e.target.onerror = null // Prevent infinite loop
+                      e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect width="80" height="80" fill="%23e5e7eb"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="24" fill="%239ca3af"%3E📦%3C/text%3E%3C/svg%3E'
+                    }}
                   />
 
                   {/* Product Info */}
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 mb-1">{item.name}</h3>
+                    <h3 
+                      className="font-semibold text-gray-900 mb-1 cursor-pointer hover:text-blue-600 transition"
+                      onClick={() => navigate(`/products/${item.product_id}`)}
+                    >
+                      {item.name}
+                    </h3>
                     <p className="text-gray-600 text-sm mb-2">${item.price}</p>
 
                     {/* Quantity Controls */}
                     <div className="flex items-center space-x-3">
                       <button
-                        onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                        onClick={() => updateQuantity(item.product_id, item.quantity - 1)}
                         className="w-8 h-8 border border-gray-300 rounded hover:bg-gray-100"
                       >
                         −
@@ -82,13 +201,13 @@ const CartPage = () => {
                         {item.quantity}
                       </span>
                       <button
-                        onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                        onClick={() => updateQuantity(item.product_id, item.quantity + 1)}
                         className="w-8 h-8 border border-gray-300 rounded hover:bg-gray-100"
                       >
                         +
                       </button>
                       <button
-                        onClick={() => removeItem(item.id)}
+                        onClick={() => handleRemoveFromCart(item.product_id, item.name)}
                         className="ml-4 text-red-600 hover:text-red-700 text-sm font-medium"
                       >
                         Remove
@@ -142,12 +261,19 @@ const CartPage = () => {
                 </div>
               </div>
 
-              <button className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition mb-3">
+              <button 
+                onClick={handleCheckout}
+                className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition mb-3"
+              >
                 Proceed to Checkout
               </button>
 
-              <button className="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-lg font-semibold hover:bg-blue-50 transition">
-                💬 Ask AI for Help
+              <button 
+                onClick={handleAskAIForHelp}
+                disabled={isSendingToAI}
+                className="w-full border-2 border-blue-600 text-blue-600 py-3 rounded-lg font-semibold hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSendingToAI ? '⏳ Opening Assistant...' : '💬 Ask AI for Help'}
               </button>
 
               {/* Trust Badges */}

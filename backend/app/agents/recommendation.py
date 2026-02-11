@@ -14,7 +14,7 @@ async def recommend_products(user_id: str, session_id: str, message: str = "") -
     message_lower = message.lower()
     
     # Check for price constraints
-    price_match = re.search(r'under \\$?(\\d+)', message_lower)
+    price_match = re.search(r'under \$?(\d+)', message_lower)
     if price_match:
         query_filter["price"] = {"$lte": float(price_match.group(1))}
     elif max_price := preferences.get("max_price"):

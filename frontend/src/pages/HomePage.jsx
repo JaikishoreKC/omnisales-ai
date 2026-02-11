@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom'
 
 const HomePage = () => {
   const categories = [
-    { name: 'Electronics', icon: '💻', color: 'from-blue-500 to-purple-500' },
-    { name: 'Clothing', icon: '👕', color: 'from-pink-500 to-red-500' },
-    { name: 'Home', icon: '🏠', color: 'from-green-500 to-teal-500' },
-    { name: 'Sports', icon: '⚽', color: 'from-orange-500 to-yellow-500' }
+    { name: 'Electronics', id: 'electronics', icon: '💻', color: 'from-blue-500 to-purple-500' },
+    { name: 'Shirts', id: 'shirts', icon: '👕', color: 'from-pink-500 to-red-500' },
+    { name: 'Shoes', id: 'shoes', icon: '👟', color: 'from-green-500 to-teal-500' },
+    { name: 'Jeans', id: 'jeans', icon: '👖', color: 'from-orange-500 to-yellow-500' }
   ]
 
   const features = [
@@ -88,7 +88,7 @@ const HomePage = () => {
             {categories.map((category, index) => (
               <Link
                 key={index}
-                to="/products"
+                to={`/products?category=${category.id}`}
                 className={`bg-gradient-to-br ${category.color} text-white rounded-xl p-8 text-center hover:scale-105 transition-transform shadow-lg`}
               >
                 <div className="text-5xl mb-3">{category.icon}</div>

@@ -328,14 +328,20 @@ async def get_products(
     request: Request,
     category: str = None,
     search: str = None,
+    sort_by: str = "name",
+    sort_order: str = "asc",
+    stock_filter: str = None,
     limit: int = 20,
     skip: int = 0
 ):
     """
-    Get products list with optional filtering
+    Get products list with optional filtering and sorting
     
     - **category**: Filter by category (shirts, shoes, jeans, electronics)
     - **search**: Search in product name
+    - **sort_by**: Sort field (name, price, stock, created_at)
+    - **sort_order**: Sort direction (asc, desc)
+    - **stock_filter**: Filter by stock status (in_stock, low_stock, out_of_stock)
     - **limit**: Max products to return (default 20)
     - **skip**: Number of products to skip for pagination
     """
@@ -349,12 +355,23 @@ async def get_products(
     if search:
         query_filter["name"] = {"$regex": search, "$options": "i"}
     
+    # Stock filtering
+    if stock_filter == "out_of_stock":
+        query_filter["stock"] = {"$lte": 0}
+    elif stock_filter == "low_stock":
+        query_filter["stock"] = {"$gt": 0, "$lte": 10}
+    elif stock_filter == "in_stock":
+        query_filter["stock"] = {"$gt": 10}
+    
     # Get total count
     db = get_database()
     total = await db.products.count_documents(query_filter)
     
-    # Get products
-    cursor = db.products.find(query_filter).skip(skip).limit(limit)
+    # Sort direction
+    sort_direction = 1 if sort_order == "asc" else -1
+    
+    # Get products with sorting
+    cursor = db.products.find(query_filter).sort(sort_by, sort_direction).skip(skip).limit(limit)
     products = await cursor.to_list(length=limit)
     
     # Convert ObjectId to string
@@ -391,3 +408,571 @@ async def get_product_detail(
     product["_id"] = str(product["_id"])
     
     return product
+
+
+# ==================== Authentication Endpoints ====================
+
+from pydantic import BaseModel, EmailStr
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+@app.post("/auth/register", tags=["auth"])
+async def register(request: RegisterRequest):
+    """Register a new user"""
+    from app.auth import get_user_by_email, create_user, create_access_token
+    
+    existing_user = await get_user_by_email(request.email)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    user = await create_user(request.email, request.password, request.name)
+    
+    # Convert ObjectId to string
+    if "_id" in user:
+        user["_id"] = str(user["_id"])
+    
+    token = create_access_token({"user_id": user["user_id"], "email": user["email"]})
+    
+    return {"user": user, "token": token}
+
+
+@app.post("/auth/login", tags=["auth"])
+async def login(request: LoginRequest):
+    """Login user"""
+    from app.auth import get_user_by_email, verify_password, create_access_token
+    
+    user = await get_user_by_email(request.email)
+    if not user or not verify_password(request.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Remove sensitive data and convert ObjectId
+    user.pop("password_hash", None)
+    if "_id" in user:
+        user["_id"] = str(user["_id"])
+    
+    token = create_access_token({"user_id": user["user_id"], "email": user["email"]})
+    
+    return {"user": user, "token": token}
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@app.post("/auth/change-password", tags=["auth"])
+async def change_password(request: Request, password_req: ChangePasswordRequest):
+    """Change password for logged-in user"""
+    from app.auth import change_password
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    # Validate new password
+    if len(password_req.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+    
+    success = await change_password(
+        user["user_id"],
+        password_req.old_password,
+        password_req.new_password
+    )
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    
+    return {"message": "Password changed successfully"}
+
+
+class RequestResetRequest(BaseModel):
+    email: str
+
+
+@app.post("/auth/request-reset", tags=["auth"])
+async def request_password_reset(request: RequestResetRequest):
+    """Request a password reset token"""
+    from app.auth import create_reset_token
+    
+    token = await create_reset_token(request.email)
+    
+    # Always return success to prevent email enumeration
+    # In production, send email with token here
+    if token:
+        # TODO: Send email with reset link: /reset-password?token={token}
+        # For now, return token (REMOVE IN PRODUCTION)
+        return {
+            "message": "If the email exists, a reset link has been sent",
+            "token": token  # TEMPORARY - Remove in production, send via email instead
+        }
+    
+    return {"message": "If the email exists, a reset link has been sent"}
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+@app.post("/auth/reset-password", tags=["auth"])
+async def reset_password(request: ResetPasswordRequest):
+    """Reset password using a valid reset token"""
+    from app.auth import reset_password_with_token
+    
+    # Validate new password
+    if len(request.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    success = await reset_password_with_token(request.token, request.new_password)
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    
+    return {"message": "Password reset successfully"}
+
+
+# ==================== Order Endpoints ====================
+
+from typing import List
+
+class OrderItem(BaseModel):
+    product_id: str
+    name: str
+    price: float
+    quantity: int
+
+class ShippingAddress(BaseModel):
+    fullName: str
+    email: str
+    phone: str
+    address: str
+    city: str
+    state: str
+    zipCode: str
+    country: str
+
+class CreateOrderRequest(BaseModel):
+    items: List[OrderItem]
+    total_amount: float
+    shipping_address: ShippingAddress
+
+
+async def get_current_user(authorization: str = Depends(lambda x: x)):
+    """Dependency to get current user from token"""
+    from app.auth import decode_token
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.split(" ")[1]
+    payload = decode_token(token)
+    
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    return payload
+
+
+@app.post("/orders", tags=["orders"])
+async def create_order(
+    request: Request,
+    order_req: CreateOrderRequest,
+    authorization: str = Depends(lambda: None)
+):
+    """Create a new order"""
+    from app.repositories.order_repository import create_order
+    
+    # Get authorization from headers
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    order_data = {
+        **order_req.dict(),
+        "user_id": user["user_id"]
+    }
+    
+    order = await create_order(
+        user["user_id"],
+        [item.dict() for item in order_req.items],
+        order_req.total_amount,
+        order_req.shipping_address.dict()
+    )
+    
+    # Update product stock
+    db = get_database()
+    for item in order_req.items:
+        await db.products.update_one(
+            {"product_id": item.product_id},
+            {"$inc": {"stock": -item.quantity}}
+        )
+    
+    # Convert ObjectId to string
+    if "_id" in order:
+        order["_id"] = str(order["_id"])
+    
+    return order
+
+
+@app.get("/orders", tags=["orders"])
+async def get_user_orders(request: Request):
+    """Get user's orders"""
+    from app.repositories.order_repository import get_user_orders
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    orders = await get_user_orders(user["user_id"])
+    
+    # Convert ObjectId to string for each order
+    for order in orders:
+        if "_id" in order:
+            order["_id"] = str(order["_id"])
+    
+    return {"orders": orders}
+
+
+@app.get("/orders/{order_id}", tags=["orders"])
+async def get_order_detail(request: Request, order_id: str):
+    """Get order details"""
+    from app.repositories.order_repository import get_order_by_id
+    from app.auth import get_user_by_id
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    order = await get_order_by_id(order_id)
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Check if user owns the order or is admin
+    user_doc = await get_user_by_id(user["user_id"])
+    is_admin = user_doc and user_doc.get("role") == "admin"
+    
+    if order["user_id"] != user["user_id"] and not is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Convert ObjectId to string
+    if "_id" in order:
+        order["_id"] = str(order["_id"])
+    
+    return order
+
+
+# ==================== Review Endpoints ====================
+
+class CreateReviewRequest(BaseModel):
+    product_id: str
+    rating: int
+    comment: str
+
+@app.post("/reviews", tags=["reviews"])
+async def create_review(request: Request, review_req: CreateReviewRequest):
+    """Create a product review"""
+    from app.repositories.review_repository import create_review
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    if review_req.rating < 1 or review_req.rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+    
+    review = await create_review(
+        review_req.product_id,
+        user["user_id"],
+        user.get("name", "Anonymous"),
+        review_req.rating,
+        review_req.comment
+    )
+    
+    # Convert ObjectId to string
+    if "_id" in review:
+        review["_id"] = str(review["_id"])
+    
+    return review
+
+
+@app.get("/reviews/{product_id}", tags=["reviews"])
+async def get_product_reviews(product_id: str):
+    """Get reviews for a product"""
+    from app.repositories.review_repository import get_product_reviews, get_review_stats
+    
+    reviews = await get_product_reviews(product_id)
+    stats = await get_review_stats(product_id)
+    
+    # Convert ObjectId to string for each review
+    for review in reviews:
+        if "_id" in review:
+            review["_id"] = str(review["_id"])
+    
+    return {
+        "reviews": reviews,
+        "stats": stats
+    }
+
+
+# ==================== Admin Endpoints ====================
+
+@app.get("/admin/orders", tags=["admin"])
+async def get_all_orders_admin(
+    request: Request,
+    skip: int = 0,
+    limit: int = 50,
+    status: str = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc"
+):
+    """Get all orders (admin only) with filtering and sorting"""
+    from app.repositories.order_repository import get_all_orders
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    # Check if user is admin
+    from app.auth import get_user_by_id
+    user_doc = await get_user_by_id(user["user_id"])
+    if not user_doc or user_doc.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Build query filter
+    query_filter = {}
+    if status and status != "all":
+        query_filter["status"] = status
+    
+    # Get total count
+    db = get_database()
+    total = await db.orders.count_documents(query_filter)
+    
+    # Sort direction
+    sort_direction = 1 if sort_order == "asc" else -1
+    
+    # Get orders with filtering and sorting
+    cursor = db.orders.find(query_filter).sort(sort_by, sort_direction).skip(skip).limit(limit)
+    orders = await cursor.to_list(length=limit)
+    
+    # Convert ObjectId to string for each order
+    for order in orders:
+        if "_id" in order:
+            order["_id"] = str(order["_id"])
+    
+    return {"orders": orders, "total": total}
+
+
+class CreateProductRequest(BaseModel):
+    name: str
+    category: str
+    price: float
+    stock: int
+
+@app.post("/admin/products", tags=["admin"])
+async def create_product_admin(request: Request, product_req: CreateProductRequest):
+    """Create a new product (admin only)"""
+    from uuid import uuid4
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    from app.auth import get_user_by_id
+    user_doc = await get_user_by_id(user["user_id"])
+    if not user_doc or user_doc.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    db = get_database()
+    product = {
+        "product_id": str(uuid4()),
+        **product_req.dict()
+    }
+    await db.products.insert_one(product)
+    
+    product["_id"] = str(product["_id"])
+    return product
+
+
+@app.delete("/admin/products/{product_id}", tags=["admin"])
+async def delete_product_admin(request: Request, product_id: str):
+    """Delete a product (admin only)"""
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    from app.auth import get_user_by_id
+    user_doc = await get_user_by_id(user["user_id"])
+    if not user_doc or user_doc.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    db = get_database()
+    result = await db.products.delete_one({"product_id": product_id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    return {"message": "Product deleted"}
+
+
+class UpdateProductRequest(BaseModel):
+    stock: int | None = None
+    price: float | None = None
+
+@app.patch("/admin/products/{product_id}", tags=["admin"])
+async def update_product_admin(request: Request, product_id: str, update_req: UpdateProductRequest):
+    """Update product (admin only)"""
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    from app.auth import get_user_by_id
+    user_doc = await get_user_by_id(user["user_id"])
+    if not user_doc or user_doc.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    db = get_database()
+    update_data = {k: v for k, v in update_req.dict().items() if v is not None}
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No update data provided")
+    
+    result = await db.products.update_one(
+        {"product_id": product_id},
+        {"$set": update_data}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Product not found")
+    
+    return {"message": "Product updated"}
+
+
+@app.get("/admin/users", tags=["admin"])
+async def get_all_users_admin(
+    request: Request,
+    skip: int = 0,
+    limit: int = 100,
+    role: str = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc"
+):
+    """Get all users (admin only) with filtering and sorting"""
+    from app.auth import get_user_by_id, get_all_users
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    user_doc = await get_user_by_id(user["user_id"])
+    if not user_doc or user_doc.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Build query filter
+    query_filter = {}
+    if role and role != "all":
+        query_filter["role"] = role
+    
+    # Get total count
+    db = get_database()
+    total = await db.users.count_documents(query_filter)
+    
+    # Sort direction
+    sort_direction = 1 if sort_order == "asc" else -1
+    
+    # Get users with filtering and sorting
+    cursor = db.users.find(query_filter).sort(sort_by, sort_direction).skip(skip).limit(limit)
+    users = await cursor.to_list(length=limit)
+    
+    # Convert ObjectId to string for each user
+    for u in users:
+        if "_id" in u:
+            u["_id"] = str(u["_id"])
+    
+    return {"users": users, "total": total}
+
+
+@app.get("/admin/users/{user_id}", tags=["admin"])
+async def get_user_details_admin(request: Request, user_id: str):
+    """Get user details with orders (admin only)"""
+    from app.auth import get_user_by_id
+    from app.repositories.order_repository import get_user_orders
+    
+    auth_header = request.headers.get("Authorization")
+    user = await get_current_user(auth_header)
+    
+    user_doc = await get_user_by_id(user["user_id"])
+    if not user_doc or user_doc.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Get target user
+    target_user = await get_user_by_id(user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Remove sensitive data
+    target_user.pop("password_hash", None)
+    if "_id" in target_user:
+        target_user["_id"] = str(target_user["_id"])
+    
+    # Get user's orders
+    orders = await get_user_orders(user_id, limit=100)
+    
+    # Convert ObjectId for orders
+    for order in orders:
+        if "_id" in order:
+            order["_id"] = str(order["_id"])
+    
+    # Separate current and past orders
+    current_orders = [o for o in orders if o.get("status") not in ["delivered", "cancelled"]]
+    past_orders = [o for o in orders if o.get("status") in ["delivered", "cancelled"]]
+    
+    return {
+        "user": target_user,
+        "current_orders": current_orders,
+        "past_orders": past_orders,
+        "total_orders": len(orders)
+    }
+
+
+@app.get("/profile/{user_id}", tags=["profile"])
+async def get_user_profile(request: Request, user_id: str):
+    """Get user profile with orders (own profile or admin)"""
+    from app.auth import get_user_by_id
+    from app.repositories.order_repository import get_user_orders
+    
+    auth_header = request.headers.get("Authorization")
+    current_user = await get_current_user(auth_header)
+    
+    # Check if user is viewing own profile or is admin
+    current_user_doc = await get_user_by_id(current_user["user_id"])
+    is_admin = current_user_doc and current_user_doc.get("role") == "admin"
+    
+    if current_user["user_id"] != user_id and not is_admin:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Get target user
+    target_user = await get_user_by_id(user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Remove sensitive data
+    target_user.pop("password_hash", None)
+    if "_id" in target_user:
+        target_user["_id"] = str(target_user["_id"])
+    
+    # Get user's orders
+    orders = await get_user_orders(user_id, limit=100)
+    
+    # Convert ObjectId for orders
+    for order in orders:
+        if "_id" in order:
+            order["_id"] = str(order["_id"])
+    
+    # Separate current and past orders
+    current_orders = [o for o in orders if o.get("status") not in ["delivered", "cancelled"]]
+    past_orders = [o for o in orders if o.get("status") in ["delivered", "cancelled"]]
+    
+    return {
+        "user": target_user,
+        "current_orders": current_orders,
+        "past_orders": past_orders,
+        "total_orders": len(orders)
+    }

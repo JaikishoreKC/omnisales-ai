@@ -39,4 +39,18 @@ export const getProductById = async (productId) => {
   return response.data
 }
 
+export const createReview = async (reviewData, token) => {
+  const response = await api.post('/reviews', reviewData, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  })
+  return response.data
+}
+
+export const getProductReviews = async (productId) => {
+  const response = await api.get(`/reviews/${productId}`)
+  return response.data
+}
+
 export default api
