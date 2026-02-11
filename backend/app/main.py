@@ -1,4 +1,6 @@
 from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
@@ -11,16 +13,23 @@ from app.core.gateway import MessageGateway, ChannelType
 from app.adapters.web import WebAdapter
 from app.adapters.whatsapp import WhatsAppAdapter
 from app.adapters.voice import VoiceAdapter
-from app.models.schemas import ChatRequest, ChatResponse
+from app.models.schemas import ChatRequest, ChatResponse, ApiResponse
 from app.models.webhooks import WhatsAppWebhookPayload, SuperUWebhookPayload, ChatRequestValidated
 from app.middleware.auth import SecurityHeadersMiddleware, security, verify_api_key
+from app.middleware.request_id import RequestIdMiddleware
+from app.utils.serializers import serialize_doc, serialize_list
+from app.utils.response import api_success, api_error
+from app.utils.logging_context import RequestIdFilter
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(request_id)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIdFilter())
 
 settings = get_settings()
 
@@ -104,6 +113,32 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestIdMiddleware)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=api_error(message=exc.detail, error=exc.detail)
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=422,
+        content=api_error(message="Validation error", error=str(exc))
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content=api_error(message="Internal server error")
+    )
 
 # CORS configuration - restrict in production
 allowed_origins = [settings.frontend_url]
@@ -115,15 +150,15 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
 
-@app.get("/", tags=["root"])
+@app.get("/", tags=["root"], response_model=ApiResponse)
 async def root():
     """API root endpoint - redirects to documentation"""
-    return {
+    return api_success({
         "message": "Welcome to OmniSales AI",
         "version": "2.0.0",
         "docs": "/docs",
@@ -135,13 +170,25 @@ async def root():
                 "voice": "/webhook/superu"
             }
         }
-    }
+    })
 
 
-@app.get("/health", tags=["system"])
+@app.get("/health", tags=["system"], response_model=ApiResponse)
 async def health_check():
     """Health check endpoint - verify API is running"""
-    return {"status": "ok", "version": "2.0.0", "channels": ["web", "whatsapp", "voice"]}
+    db_status = "ok"
+    try:
+        db = get_database()
+        await db.command("ping")
+    except Exception:
+        db_status = "error"
+
+    return api_success({
+        "status": "ok",
+        "version": "2.0.0",
+        "channels": ["web", "whatsapp", "voice"],
+        "database": db_status
+    })
 
 
 @app.post("/chat", response_model=ChatResponse, tags=["chat"])
@@ -205,7 +252,7 @@ async def chat(
     )
 
 
-@app.post("/webhook/whatsapp", tags=["webhooks"])
+@app.post("/webhook/whatsapp", tags=["webhooks"], response_model=ApiResponse)
 @limiter.limit("100/minute")
 async def whatsapp_webhook(request: Request):
     """WhatsApp Business API webhook - receives messages from WhatsApp Business"""
@@ -249,7 +296,7 @@ async def whatsapp_webhook(request: Request):
         
         await message_gateway.send_message(outgoing)
         
-        return {"status": "ok"}
+        return api_success({"status": "ok"})
     
     except Exception as e:
         logger.error(f"WhatsApp webhook error: {e}", exc_info=True)
@@ -271,7 +318,7 @@ async def whatsapp_webhook_verify(request: Request):
     raise HTTPException(status_code=403, detail="Verification failed")
 
 
-@app.post("/webhook/superu", tags=["webhooks"])
+@app.post("/webhook/superu", tags=["webhooks"], response_model=ApiResponse)
 @limiter.limit("100/minute")
 async def superu_webhook(request: Request):
     """SuperU voice webhook - receives voice call events from SuperU API"""
@@ -315,14 +362,14 @@ async def superu_webhook(request: Request):
         
         await message_gateway.send_message(outgoing)
         
-        return {"status": "ok"}
+        return api_success({"status": "ok"})
     
     except Exception as e:
         logger.error(f"SuperU webhook error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/products", tags=["products"])
+@app.get("/products", tags=["products"], response_model=ApiResponse)
 @limiter.limit("100/minute")
 async def get_products(
     request: Request,
@@ -374,19 +421,17 @@ async def get_products(
     cursor = db.products.find(query_filter).sort(sort_by, sort_direction).skip(skip).limit(limit)
     products = await cursor.to_list(length=limit)
     
-    # Convert ObjectId to string
-    for product in products:
-        product["_id"] = str(product["_id"])
+    products = serialize_list(products)
     
-    return {
+    return api_success({
         "products": products,
         "total": total,
         "page": skip // limit + 1,
         "pages": (total + limit - 1) // limit
-    }
+    })
 
 
-@app.get("/products/{product_id}", tags=["products"])
+@app.get("/products/{product_id}", tags=["products"], response_model=ApiResponse)
 @limiter.limit("100/minute")
 async def get_product_detail(
     request: Request,
@@ -404,10 +449,7 @@ async def get_product_detail(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    # Convert ObjectId to string
-    product["_id"] = str(product["_id"])
-    
-    return product
+    return api_success(serialize_doc(product))
 
 
 # ==================== Authentication Endpoints ====================
@@ -423,7 +465,7 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
-@app.post("/auth/register", tags=["auth"])
+@app.post("/auth/register", tags=["auth"], response_model=ApiResponse)
 async def register(request: RegisterRequest):
     """Register a new user"""
     from app.auth import get_user_by_email, create_user, create_access_token
@@ -434,16 +476,14 @@ async def register(request: RegisterRequest):
     
     user = await create_user(request.email, request.password, request.name)
     
-    # Convert ObjectId to string
-    if "_id" in user:
-        user["_id"] = str(user["_id"])
+    user = serialize_doc(user)
     
     token = create_access_token({"user_id": user["user_id"], "email": user["email"]})
     
-    return {"user": user, "token": token}
+    return api_success({"user": user, "token": token})
 
 
-@app.post("/auth/login", tags=["auth"])
+@app.post("/auth/login", tags=["auth"], response_model=ApiResponse)
 async def login(request: LoginRequest):
     """Login user"""
     from app.auth import get_user_by_email, verify_password, create_access_token
@@ -454,12 +494,11 @@ async def login(request: LoginRequest):
     
     # Remove sensitive data and convert ObjectId
     user.pop("password_hash", None)
-    if "_id" in user:
-        user["_id"] = str(user["_id"])
+    user = serialize_doc(user)
     
     token = create_access_token({"user_id": user["user_id"], "email": user["email"]})
     
-    return {"user": user, "token": token}
+    return api_success({"user": user, "token": token})
 
 
 class ChangePasswordRequest(BaseModel):
@@ -467,7 +506,7 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-@app.post("/auth/change-password", tags=["auth"])
+@app.post("/auth/change-password", tags=["auth"], response_model=ApiResponse)
 async def change_password(request: Request, password_req: ChangePasswordRequest):
     """Change password for logged-in user"""
     from app.auth import change_password
@@ -488,14 +527,14 @@ async def change_password(request: Request, password_req: ChangePasswordRequest)
     if not success:
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     
-    return {"message": "Password changed successfully"}
+    return api_success({"message": "Password changed successfully"})
 
 
 class RequestResetRequest(BaseModel):
     email: str
 
 
-@app.post("/auth/request-reset", tags=["auth"])
+@app.post("/auth/request-reset", tags=["auth"], response_model=ApiResponse)
 async def request_password_reset(request: RequestResetRequest):
     """Request a password reset token"""
     from app.auth import create_reset_token
@@ -504,15 +543,14 @@ async def request_password_reset(request: RequestResetRequest):
     
     # Always return success to prevent email enumeration
     # In production, send email with token here
-    if token:
+    if token and settings.environment == "development":
         # TODO: Send email with reset link: /reset-password?token={token}
-        # For now, return token (REMOVE IN PRODUCTION)
-        return {
+        return api_success({
             "message": "If the email exists, a reset link has been sent",
-            "token": token  # TEMPORARY - Remove in production, send via email instead
-        }
-    
-    return {"message": "If the email exists, a reset link has been sent"}
+            "token": token
+        })
+
+    return api_success({"message": "If the email exists, a reset link has been sent"})
 
 
 class ResetPasswordRequest(BaseModel):
@@ -520,7 +558,7 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
-@app.post("/auth/reset-password", tags=["auth"])
+@app.post("/auth/reset-password", tags=["auth"], response_model=ApiResponse)
 async def reset_password(request: ResetPasswordRequest):
     """Reset password using a valid reset token"""
     from app.auth import reset_password_with_token
@@ -534,7 +572,7 @@ async def reset_password(request: ResetPasswordRequest):
     if not success:
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
     
-    return {"message": "Password reset successfully"}
+    return api_success({"message": "Password reset successfully"})
 
 
 # ==================== Order Endpoints ====================
@@ -579,7 +617,7 @@ async def get_current_user(authorization: str = Depends(lambda x: x)):
     return payload
 
 
-@app.post("/orders", tags=["orders"])
+@app.post("/orders", tags=["orders"], response_model=ApiResponse)
 async def create_order(
     request: Request,
     order_req: CreateOrderRequest,
@@ -596,30 +634,37 @@ async def create_order(
         **order_req.dict(),
         "user_id": user["user_id"]
     }
-    
+
+    # Validate stock before order creation
+    db = get_database()
+    for item in order_req.items:
+        product = await db.products.find_one({"product_id": item.product_id})
+        if not product:
+            raise HTTPException(status_code=404, detail=f"Product not found: {item.product_id}")
+        if product.get("stock", 0) < item.quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient stock for {item.name}"
+            )
+
     order = await create_order(
         user["user_id"],
         [item.dict() for item in order_req.items],
         order_req.total_amount,
         order_req.shipping_address.dict()
     )
-    
+
     # Update product stock
-    db = get_database()
     for item in order_req.items:
         await db.products.update_one(
             {"product_id": item.product_id},
             {"$inc": {"stock": -item.quantity}}
         )
     
-    # Convert ObjectId to string
-    if "_id" in order:
-        order["_id"] = str(order["_id"])
-    
-    return order
+    return api_success(serialize_doc(order))
 
 
-@app.get("/orders", tags=["orders"])
+@app.get("/orders", tags=["orders"], response_model=ApiResponse)
 async def get_user_orders(request: Request):
     """Get user's orders"""
     from app.repositories.order_repository import get_user_orders
@@ -629,15 +674,10 @@ async def get_user_orders(request: Request):
     
     orders = await get_user_orders(user["user_id"])
     
-    # Convert ObjectId to string for each order
-    for order in orders:
-        if "_id" in order:
-            order["_id"] = str(order["_id"])
-    
-    return {"orders": orders}
+    return api_success({"orders": serialize_list(orders)})
 
 
-@app.get("/orders/{order_id}", tags=["orders"])
+@app.get("/orders/{order_id}", tags=["orders"], response_model=ApiResponse)
 async def get_order_detail(request: Request, order_id: str):
     """Get order details"""
     from app.repositories.order_repository import get_order_by_id
@@ -658,11 +698,7 @@ async def get_order_detail(request: Request, order_id: str):
     if order["user_id"] != user["user_id"] and not is_admin:
         raise HTTPException(status_code=403, detail="Not authorized")
     
-    # Convert ObjectId to string
-    if "_id" in order:
-        order["_id"] = str(order["_id"])
-    
-    return order
+    return api_success(serialize_doc(order))
 
 
 # ==================== Review Endpoints ====================
@@ -672,7 +708,7 @@ class CreateReviewRequest(BaseModel):
     rating: int
     comment: str
 
-@app.post("/reviews", tags=["reviews"])
+@app.post("/reviews", tags=["reviews"], response_model=ApiResponse)
 async def create_review(request: Request, review_req: CreateReviewRequest):
     """Create a product review"""
     from app.repositories.review_repository import create_review
@@ -691,14 +727,10 @@ async def create_review(request: Request, review_req: CreateReviewRequest):
         review_req.comment
     )
     
-    # Convert ObjectId to string
-    if "_id" in review:
-        review["_id"] = str(review["_id"])
-    
-    return review
+    return api_success(serialize_doc(review))
 
 
-@app.get("/reviews/{product_id}", tags=["reviews"])
+@app.get("/reviews/{product_id}", tags=["reviews"], response_model=ApiResponse)
 async def get_product_reviews(product_id: str):
     """Get reviews for a product"""
     from app.repositories.review_repository import get_product_reviews, get_review_stats
@@ -706,20 +738,15 @@ async def get_product_reviews(product_id: str):
     reviews = await get_product_reviews(product_id)
     stats = await get_review_stats(product_id)
     
-    # Convert ObjectId to string for each review
-    for review in reviews:
-        if "_id" in review:
-            review["_id"] = str(review["_id"])
-    
-    return {
-        "reviews": reviews,
+    return api_success({
+        "reviews": serialize_list(reviews),
         "stats": stats
-    }
+    })
 
 
 # ==================== Admin Endpoints ====================
 
-@app.get("/admin/orders", tags=["admin"])
+@app.get("/admin/orders", tags=["admin"], response_model=ApiResponse)
 async def get_all_orders_admin(
     request: Request,
     skip: int = 0,
@@ -756,12 +783,7 @@ async def get_all_orders_admin(
     cursor = db.orders.find(query_filter).sort(sort_by, sort_direction).skip(skip).limit(limit)
     orders = await cursor.to_list(length=limit)
     
-    # Convert ObjectId to string for each order
-    for order in orders:
-        if "_id" in order:
-            order["_id"] = str(order["_id"])
-    
-    return {"orders": orders, "total": total}
+    return api_success({"orders": serialize_list(orders), "total": total})
 
 
 class CreateProductRequest(BaseModel):
@@ -770,7 +792,7 @@ class CreateProductRequest(BaseModel):
     price: float
     stock: int
 
-@app.post("/admin/products", tags=["admin"])
+@app.post("/admin/products", tags=["admin"], response_model=ApiResponse)
 async def create_product_admin(request: Request, product_req: CreateProductRequest):
     """Create a new product (admin only)"""
     from uuid import uuid4
@@ -788,13 +810,13 @@ async def create_product_admin(request: Request, product_req: CreateProductReque
         "product_id": str(uuid4()),
         **product_req.dict()
     }
-    await db.products.insert_one(product)
-    
-    product["_id"] = str(product["_id"])
-    return product
+    result = await db.products.insert_one(product)
+    product["_id"] = result.inserted_id
+
+    return api_success(serialize_doc(product))
 
 
-@app.delete("/admin/products/{product_id}", tags=["admin"])
+@app.delete("/admin/products/{product_id}", tags=["admin"], response_model=ApiResponse)
 async def delete_product_admin(request: Request, product_id: str):
     """Delete a product (admin only)"""
     auth_header = request.headers.get("Authorization")
@@ -811,14 +833,14 @@ async def delete_product_admin(request: Request, product_id: str):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    return {"message": "Product deleted"}
+    return api_success({"message": "Product deleted"})
 
 
 class UpdateProductRequest(BaseModel):
     stock: int | None = None
     price: float | None = None
 
-@app.patch("/admin/products/{product_id}", tags=["admin"])
+@app.patch("/admin/products/{product_id}", tags=["admin"], response_model=ApiResponse)
 async def update_product_admin(request: Request, product_id: str, update_req: UpdateProductRequest):
     """Update product (admin only)"""
     auth_header = request.headers.get("Authorization")
@@ -843,10 +865,10 @@ async def update_product_admin(request: Request, product_id: str, update_req: Up
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    return {"message": "Product updated"}
+    return api_success({"message": "Product updated"})
 
 
-@app.get("/admin/users", tags=["admin"])
+@app.get("/admin/users", tags=["admin"], response_model=ApiResponse)
 async def get_all_users_admin(
     request: Request,
     skip: int = 0,
@@ -881,15 +903,10 @@ async def get_all_users_admin(
     cursor = db.users.find(query_filter).sort(sort_by, sort_direction).skip(skip).limit(limit)
     users = await cursor.to_list(length=limit)
     
-    # Convert ObjectId to string for each user
-    for u in users:
-        if "_id" in u:
-            u["_id"] = str(u["_id"])
-    
-    return {"users": users, "total": total}
+    return api_success({"users": serialize_list(users), "total": total})
 
 
-@app.get("/admin/users/{user_id}", tags=["admin"])
+@app.get("/admin/users/{user_id}", tags=["admin"], response_model=ApiResponse)
 async def get_user_details_admin(request: Request, user_id: str):
     """Get user details with orders (admin only)"""
     from app.auth import get_user_by_id
@@ -909,27 +926,23 @@ async def get_user_details_admin(request: Request, user_id: str):
     
     # Remove sensitive data
     target_user.pop("password_hash", None)
-    if "_id" in target_user:
-        target_user["_id"] = str(target_user["_id"])
+    target_user = serialize_doc(target_user)
     
     # Get user's orders
     orders = await get_user_orders(user_id, limit=100)
     
-    # Convert ObjectId for orders
-    for order in orders:
-        if "_id" in order:
-            order["_id"] = str(order["_id"])
+    orders = serialize_list(orders)
     
     # Separate current and past orders
     current_orders = [o for o in orders if o.get("status") not in ["delivered", "cancelled"]]
     past_orders = [o for o in orders if o.get("status") in ["delivered", "cancelled"]]
     
-    return {
+    return api_success({
         "user": target_user,
         "current_orders": current_orders,
         "past_orders": past_orders,
         "total_orders": len(orders)
-    }
+    })
 
 
 @app.get("/profile/{user_id}", tags=["profile"])
@@ -955,24 +968,20 @@ async def get_user_profile(request: Request, user_id: str):
     
     # Remove sensitive data
     target_user.pop("password_hash", None)
-    if "_id" in target_user:
-        target_user["_id"] = str(target_user["_id"])
+    target_user = serialize_doc(target_user)
     
     # Get user's orders
     orders = await get_user_orders(user_id, limit=100)
     
-    # Convert ObjectId for orders
-    for order in orders:
-        if "_id" in order:
-            order["_id"] = str(order["_id"])
+    orders = serialize_list(orders)
     
     # Separate current and past orders
     current_orders = [o for o in orders if o.get("status") not in ["delivered", "cancelled"]]
     past_orders = [o for o in orders if o.get("status") in ["delivered", "cancelled"]]
     
-    return {
+    return api_success({
         "user": target_user,
         "current_orders": current_orders,
         "past_orders": past_orders,
         "total_orders": len(orders)
-    }
+    })

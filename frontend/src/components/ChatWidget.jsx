@@ -49,6 +49,13 @@ const ChatWidget = () => {
   useEffect(() => {
     localStorage.setItem('chat-widget-size', JSON.stringify(size))
   }, [size])
+
+  useEffect(() => {
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove)
+      document.removeEventListener('mouseup', handleResizeEnd)
+    }
+  }, [])
   
   // Resize handlers
   const handleResizeStart = (e, direction) => {
@@ -133,9 +140,15 @@ const ChatWidget = () => {
       addMessage(assistantMessage)
     } catch (error) {
       console.error('Error:', error)
+      const status = error?.status
+      const friendlyMessage = status === 429
+        ? 'We are getting a lot of requests. Please wait a moment and try again.'
+        : status === 401
+        ? 'Chat is unavailable. Missing or invalid API key.'
+        : 'Sorry, something went wrong. Please try again.'
       const errorMessage = {
         role: 'assistant',
-        content: 'Sorry, something went wrong. Please try again.',
+        content: friendlyMessage,
         source: 'floating-widget'
       }
       addMessage(errorMessage)

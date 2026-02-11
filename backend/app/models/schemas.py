@@ -49,3 +49,14 @@ class ChatResponse(BaseModel):
     reply: str
     agent_used: str
     actions: Optional[List[Dict[str, Any]]] = None
+
+
+class ApiResponse(BaseModel):
+    success: bool
+    data: Optional[Any] = None
+    message: str = ""
+    error: Optional[str] = None
+
+    model_config = {
+        "extra": "allow"
+    }

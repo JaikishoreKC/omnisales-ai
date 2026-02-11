@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import { getOrders } from '../services/api'
 
 const OrdersPage = () => {
   const { isAuthenticated, token } = useAuth()
@@ -20,14 +18,10 @@ const OrdersPage = () => {
 
     const fetchOrders = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/orders`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        })
-        setOrders(response.data.orders || [])
+        const data = await getOrders(token)
+        setOrders(data.orders || [])
       } catch (err) {
-        setError('Failed to load orders')
+        setError(err.message || 'Failed to load orders')
       } finally {
         setLoading(false)
       }

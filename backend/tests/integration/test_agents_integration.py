@@ -2,8 +2,15 @@
 Comprehensive test script for all OmniSales AI agents
 Tests all 8 agents with the seeded test data
 """
+import os
 import requests
 import json
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_LIVE_INTEGRATION") != "1",
+    reason="Live integration test requires running backend and seeded data"
+)
 
 BASE_URL = "http://localhost:8000"
 API_KEY = "CxFn1QSd0rRCQWieaf_e7pJiPrESsIaPqaYRHgUPpDs"

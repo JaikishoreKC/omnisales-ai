@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
 
 const AuthContext = createContext(null)
 
@@ -19,12 +20,45 @@ export const AuthProvider = ({ children }) => {
     // Load user from localStorage on mount
     const storedUser = localStorage.getItem('user')
     const storedToken = localStorage.getItem('token')
-    
+
     if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser))
-      setToken(storedToken)
+      try {
+        setUser(JSON.parse(storedUser))
+        setToken(storedToken)
+      } catch (error) {
+        console.error('Failed to parse stored user:', error)
+        localStorage.removeItem('user')
+        localStorage.removeItem('token')
+      }
     }
     setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.key === 'token' || event.key === 'user') {
+        const nextToken = localStorage.getItem('token')
+        const nextUser = localStorage.getItem('user')
+
+        if (!nextToken || !nextUser) {
+          setUser(null)
+          setToken(null)
+          return
+        }
+
+        try {
+          setUser(JSON.parse(nextUser))
+          setToken(nextToken)
+        } catch (error) {
+          console.error('Failed to parse synced user:', error)
+          setUser(null)
+          setToken(null)
+        }
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
   }, [])
 
   const login = (userData, authToken) => {
@@ -53,10 +87,14 @@ export const AuthProvider = ({ children }) => {
     login,
     logout,
     isAdmin,
-    isAuthenticated: !!user
+    isAuthenticated: !!user && !!token
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export default AuthContext
+
+AuthProvider.propTypes = {
+  children: PropTypes.node
+}

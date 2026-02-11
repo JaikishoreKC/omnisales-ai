@@ -2,16 +2,12 @@
 Basic authentication tests for OmniSales AI
 """
 import pytest
-from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
 
 
 class TestAuthentication:
     """Test API authentication"""
     
-    def test_chat_without_auth_returns_401(self):
+    def test_chat_without_auth_returns_401(self, client):
         """Test that chat endpoint requires authentication"""
         response = client.post(
             "/chat",
@@ -23,7 +19,7 @@ class TestAuthentication:
         )
         assert response.status_code == 403  # FastAPI returns 403 for missing auth
     
-    def test_chat_with_invalid_auth_returns_401(self):
+    def test_chat_with_invalid_auth_returns_401(self, client):
         """Test that invalid API key is rejected"""
         response = client.post(
             "/chat",
@@ -35,9 +31,9 @@ class TestAuthentication:
             }
         )
         assert response.status_code == 401
-        assert "Invalid API key" in response.json()["detail"]
+        assert "Invalid API key" in response.json()["error"]
     
-    def test_health_endpoint_public(self):
+    def test_health_endpoint_public(self, client):
         """Test that health endpoint is publicly accessible"""
         response = client.get("/health")
         assert response.status_code == 200
@@ -105,7 +101,7 @@ class TestInputValidation:
 class TestSecurityHeaders:
     """Test security headers middleware"""
     
-    def test_security_headers_present(self):
+    def test_security_headers_present(self, client):
         """Test that security headers are added to responses"""
         response = client.get("/health")
         
@@ -126,7 +122,7 @@ class TestSecurityHeaders:
 class TestRateLimiting:
     """Test rate limiting"""
     
-    def test_rate_limit_enforced(self):
+    def test_rate_limit_enforced(self, client):
         """Test that rate limiting is enforced"""
         # This test requires actual rate limiting to be active
         # In a real test environment, you'd mock the limiter or use a test client
@@ -140,25 +136,25 @@ class TestRateLimiting:
 class TestWebhookValidation:
     """Test webhook payload validation"""
     
-    def test_whatsapp_webhook_invalid_payload(self):
+    def test_whatsapp_webhook_invalid_payload(self, client):
         """Test that invalid WhatsApp webhook payload is rejected"""
         response = client.post(
             "/webhook/whatsapp",
             json={"invalid": "payload"}
         )
         assert response.status_code == 400
-        assert "Invalid webhook payload" in response.json()["detail"]
+        assert "Invalid webhook payload" in response.json()["error"]
     
-    def test_superu_webhook_invalid_payload(self):
+    def test_superu_webhook_invalid_payload(self, client):
         """Test that invalid SuperU webhook payload is rejected"""
         response = client.post(
             "/webhook/superu",
             json={"invalid": "payload"}
         )
         assert response.status_code == 400
-        assert "Invalid webhook payload" in response.json()["detail"]
+        assert "Invalid webhook payload" in response.json()["error"]
     
-    def test_superu_webhook_missing_required_fields(self):
+    def test_superu_webhook_missing_required_fields(self, client):
         """Test that SuperU webhook requires all fields"""
         response = client.post(
             "/webhook/superu",

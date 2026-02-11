@@ -1,66 +1,68 @@
 import httpx
 import logging
-from typing import Optional
+from typing import Optional, Callable
 from app.config import get_settings
+from groq import Groq
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-OPENROUTER_API_KEY = settings.openrouter_api_key
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OLLAMA_API_URL = settings.ollama_api_url
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+GROQ_API_KEY = settings.groq_api_key
+GROQ_MODEL = "llama3-8b-8192"
+OLLAMA_API_URL = settings.ollama_url or settings.ollama_api_url
 OLLAMA_MODEL = "qwen2.5:3b"
 
 
-async def generate_response(prompt: str, model: str = DEFAULT_MODEL) -> Optional[str]:
+async def generate_response(prompt: str) -> Optional[str]:
     """
-    Generate AI response using OpenRouter (if key provided) or Ollama (free local AI)
+    Generate AI response using Groq (primary) or Ollama (fallback)
     
     Args:
         prompt: The prompt to send to AI
-        model: Model to use (for OpenRouter only)
         
     Returns:
         Generated text response or None if failed
     """
-    # Try OpenRouter first if API key is provided
-    if OPENROUTER_API_KEY:
-        return await _call_openrouter(prompt, model)
-    
-    # Fall back to Ollama (free local AI)
-    return await _call_ollama(prompt)
+    providers = _get_providers()
+
+    for provider in providers:
+        try:
+            response = await provider(prompt)
+            if response:
+                return response
+        except Exception as exc:
+            logger.error(f"AI provider error: {exc}", exc_info=True)
+            continue
+
+    return "I'm sorry, I couldn't process your request at the moment. Please try again."
 
 
-async def _call_openrouter(prompt: str, model: str) -> Optional[str]:
-    """Call OpenRouter API (paid service with better models)"""
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}]
-    }
-    
+def _get_providers() -> list[Callable[[str], Optional[str]]]:
+    providers = []
+
+    if GROQ_API_KEY:
+        providers.append(_call_groq)
+
+    if OLLAMA_API_URL:
+        providers.append(_call_ollama)
+
+    return providers
+
+
+async def _call_groq(prompt: str) -> Optional[str]:
+    """Call Groq API (primary cloud provider)."""
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                OPENROUTER_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=60.0
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"]
-            return None
-            
+        client = Groq(api_key=GROQ_API_KEY, timeout=60.0)
+        response = client.chat.completions.create(
+            model=GROQ_MODEL,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        if response and response.choices:
+            return response.choices[0].message.content
+        return None
     except Exception as e:
-        logger.error(f"OpenRouter API error: {e}", exc_info=True)
+        logger.error(f"Groq API error: {e}", exc_info=True)
         return None
 
 

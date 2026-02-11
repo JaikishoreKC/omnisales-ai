@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import { getOrderById } from '../services/api'
 
 const OrderDetailPage = () => {
   const { orderId } = useParams()
-  const { token, user, isAdmin } = useAuth()
+  const { token, isAdmin } = useAuth()
   const navigate = useNavigate()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -19,33 +17,20 @@ const OrderDetailPage = () => {
       return
     }
     fetchOrderDetails()
-  }, [orderId])
+  }, [orderId, token, navigate])
 
   const fetchOrderDetails = async () => {
     setLoading(true)
     setError(null)
     try {
-      const response = await axios.get(`${API_BASE_URL}/orders/${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      setOrder(response.data)
+      const data = await getOrderById(orderId, token)
+      setOrder(data)
     } catch (err) {
       console.error('Failed to fetch order details:', err)
-      setError(err.response?.data?.detail || 'Failed to load order details')
+      setError(err.message || 'Failed to load order details')
     } finally {
       setLoading(false)
     }
-  }
-
-  const getStatusColor = (status) => {
-    const colors = {
-      delivered: 'text-green-600',
-      pending: 'text-yellow-600',
-      processing: 'text-blue-600',
-      shipped: 'text-purple-600',
-      cancelled: 'text-red-600'
-    }
-    return colors[status] || 'text-gray-600'
   }
 
   const getStatusBadge = (status) => {
@@ -205,13 +190,16 @@ const OrderDetailPage = () => {
               <span className="mr-2">📍</span> Shipping Address
             </h2>
             <div className="space-y-2 text-gray-700">
-              <p className="font-semibold">{order.shipping_address.name}</p>
-              <p>{order.shipping_address.email}</p>
-              <p>{order.shipping_address.phone}</p>
+              <p className="font-semibold">
+                {order.shipping_address.name || order.shipping_address.fullName || 'Customer'}
+              </p>
+              <p>{order.shipping_address.email || 'N/A'}</p>
+              <p>{order.shipping_address.phone || 'N/A'}</p>
               <div className="pt-2 mt-2 border-t">
                 <p>{order.shipping_address.address}</p>
                 <p>
-                  {order.shipping_address.city}, {order.shipping_address.state} {order.shipping_address.zip}
+                  {order.shipping_address.city}, {order.shipping_address.state}{' '}
+                  {order.shipping_address.zip || order.shipping_address.zipCode}
                 </p>
                 <p>{order.shipping_address.country || 'USA'}</p>
               </div>

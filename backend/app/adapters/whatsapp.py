@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import logging
 from typing import Dict, Any
@@ -56,16 +57,22 @@ class WhatsAppAdapter(ChannelAdapter):
             "text": {"body": outgoing.message}
         }
         
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    WHATSAPP_API_URL,
-                    headers=headers,
-                    json=payload,
-                    timeout=30.0
-                )
-                response.raise_for_status()
-                return True
-        except Exception as e:
-            logger.error(f"WhatsApp send error: {e}", exc_info=True)
-            return False
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        WHATSAPP_API_URL,
+                        headers=headers,
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    return True
+            except (httpx.TimeoutException, httpx.HTTPError) as e:
+                logger.error(f"WhatsApp send error (attempt {attempt + 1}): {e}")
+                if attempt == 0:
+                    await asyncio.sleep(0.5)
+                    continue
+                return False
+            except Exception as e:
+                logger.error(f"WhatsApp send unexpected error: {e}", exc_info=True)
+                return False

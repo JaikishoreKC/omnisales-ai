@@ -3,9 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { useToast } from '../context/ToastContext'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import {
+  getProductsByQuery,
+  getAdminOrders,
+  getAdminUsers,
+  createAdminProduct,
+  deleteAdminProduct,
+  updateAdminProduct
+} from '../services/api'
 
 const AdminPage = () => {
   const { isAdmin, token } = useAuth()
@@ -80,9 +85,9 @@ const AdminPage = () => {
         if (productCategory !== 'all') params.append('category', productCategory)
         if (productStockFilter !== 'all') params.append('stock_filter', productStockFilter)
         
-        const response = await axios.get(`${API_BASE_URL}/products?${params}`)
-        setProducts(response.data.products || [])
-        setProductsTotal(response.data.total || 0)
+        const data = await getProductsByQuery(params.toString())
+        setProducts(data.products || [])
+        setProductsTotal(data.total || 0)
       } else if (activeTab === 'orders') {
         const skip = (ordersPage - 1) * itemsPerPage
         const params = new URLSearchParams({
@@ -93,11 +98,9 @@ const AdminPage = () => {
         })
         if (orderStatusFilter !== 'all') params.append('status', orderStatusFilter)
         
-        const response = await axios.get(`${API_BASE_URL}/admin/orders?${params}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        setOrders(response.data.orders || [])
-        setOrdersTotal(response.data.total || 0)
+        const data = await getAdminOrders(params.toString(), token)
+        setOrders(data.orders || [])
+        setOrdersTotal(data.total || 0)
       } else if (activeTab === 'users') {
         const skip = (usersPage - 1) * itemsPerPage
         const params = new URLSearchParams({
@@ -108,15 +111,13 @@ const AdminPage = () => {
         })
         if (userRoleFilter !== 'all') params.append('role', userRoleFilter)
         
-        const response = await axios.get(`${API_BASE_URL}/admin/users?${params}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        })
-        setUsers(response.data.users || [])
-        setUsersTotal(response.data.total || 0)
+        const data = await getAdminUsers(params.toString(), token)
+        setUsers(data.users || [])
+        setUsersTotal(data.total || 0)
       }
     } catch (err) {
       console.error('Failed to fetch data:', err)
-      setError(err.response?.data?.detail || 'Failed to fetch data')
+      setError(err.message || 'Failed to fetch data')
     } finally {
       setLoading(false)
     }
@@ -125,24 +126,18 @@ const AdminPage = () => {
   const handleAddProduct = async (e) => {
     e.preventDefault()
     try {
-      await axios.post(
-        `${API_BASE_URL}/admin/products`,
-        {
-          ...newProduct,
-          price: parseFloat(newProduct.price),
-          stock: parseInt(newProduct.stock)
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      )
+      await createAdminProduct({
+        ...newProduct,
+        price: parseFloat(newProduct.price),
+        stock: parseInt(newProduct.stock)
+      }, token)
       setShowAddProduct(false)
       setNewProduct({ name: '', category: 'electronics', price: '', stock: '' })
       success('Product added successfully!')
       fetchData()
     } catch (err) {
       console.error('Failed to add product:', err)
-      showError('Failed to add product')
+      showError(err.message || 'Failed to add product')
     }
   }
 
@@ -158,31 +153,23 @@ const AdminPage = () => {
     if (!confirmed) return
     
     try {
-      await axios.delete(`${API_BASE_URL}/admin/products/${productId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      await deleteAdminProduct(productId, token)
       success('Product deleted successfully!')
       fetchData()
     } catch (err) {
       console.error('Failed to delete product:', err)
-      showError('Failed to delete product')
+      showError(err.message || 'Failed to delete product')
     }
   }
 
   const handleUpdateStock = async (productId, newStock) => {
     try {
-      await axios.patch(
-        `${API_BASE_URL}/admin/products/${productId}`,
-        { stock: parseInt(newStock) },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      )
+      await updateAdminProduct(productId, { stock: parseInt(newStock) }, token)
       success('Stock updated successfully!')
       fetchData()
     } catch (err) {
       console.error('Failed to update stock:', err)
-      showError('Failed to update stock')
+      showError(err.message || 'Failed to update stock')
     }
   }
 
@@ -217,18 +204,14 @@ const AdminPage = () => {
     
     try {
       await Promise.all(
-        selectedProducts.map(productId => 
-          axios.delete(`${API_BASE_URL}/admin/products/${productId}`, {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-        )
+        selectedProducts.map(productId => deleteAdminProduct(productId, token))
       )
       setSelectedProducts([])
       success(`Successfully deleted ${selectedProducts.length} product(s)!`)
       fetchData()
     } catch (err) {
       console.error('Failed to delete products:', err)
-      showError('Failed to delete some products')
+      showError(err.message || 'Failed to delete some products')
     }
   }
 
@@ -242,7 +225,7 @@ const AdminPage = () => {
   const filteredOrders = orders.filter(order => {
     const searchLower = searchQueryOrders.toLowerCase()
     const orderId = (order.order_id || '').toLowerCase()
-    const userName = (order.shipping_address?.name || '').toLowerCase()
+    const userName = (order.shipping_address?.name || order.shipping_address?.fullName || '').toLowerCase()
     const email = (order.shipping_address?.email || '').toLowerCase()
     const status = (order.status || '').toLowerCase()
     

@@ -2,9 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useCart } from '../hooks/useCart'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import { createOrder } from '../services/api'
 
 const CheckoutPage = () => {
   const navigate = useNavigate()
@@ -57,24 +55,16 @@ const CheckoutPage = () => {
         quantity: item.quantity
       }))
 
-      const response = await axios.post(
-        `${API_BASE_URL}/orders`,
-        {
-          items: orderItems,
-          total_amount: total,
-          shipping_address: shippingInfo
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        }
-      )
+      const data = await createOrder({
+        items: orderItems,
+        total_amount: total,
+        shipping_address: shippingInfo
+      }, token)
 
       clearCart()
-      navigate(`/orders/${response.data.order_id}`)
+      navigate(`/orders/${data.order_id}`)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to place order. Please try again.')
+      setError(err.message || 'Failed to place order. Please try again.')
     } finally {
       setLoading(false)
     }

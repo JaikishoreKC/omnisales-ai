@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChannelType(Enum):
@@ -17,7 +17,7 @@ class IncomingMessage(BaseModel):
     user_id: str
     session_id: str
     message: str
-    metadata: Optional[Dict[str, Any]] = {}
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class OutgoingMessage(BaseModel):
@@ -25,7 +25,7 @@ class OutgoingMessage(BaseModel):
     user_id: str
     message: str
     actions: Optional[list] = None
-    metadata: Optional[Dict[str, Any]] = {}
+    metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class MessageGateway:

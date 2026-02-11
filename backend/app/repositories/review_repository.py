@@ -4,7 +4,7 @@ Review Repository - Database operations for product reviews
 from typing import List, Dict, Optional
 from datetime import datetime
 from uuid import uuid4
-from app.database import get_database
+from app.core.database import get_database
 
 
 async def create_review(product_id: str, user_id: str, user_name: str, rating: int, comment: str) -> Dict:
@@ -22,7 +22,8 @@ async def create_review(product_id: str, user_id: str, user_name: str, rating: i
         "helpful_count": 0
     }
     
-    await db.reviews.insert_one(review)
+    result = await db.reviews.insert_one(review)
+    review["_id"] = result.inserted_id
     return review
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import logging
 from typing import Dict, Any
@@ -48,19 +49,25 @@ class VoiceAdapter(ChannelAdapter):
             "voice": "en-US-Neural2-J"
         }
         
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{SUPERU_API_URL}/respond",
-                    headers=headers,
-                    json=payload,
-                    timeout=30.0
-                )
-                response.raise_for_status()
-                return True
-        except Exception as e:
-            logger.error(f"SuperU voice error: {e}", exc_info=True)
-            return False
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        f"{SUPERU_API_URL}/respond",
+                        headers=headers,
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    return True
+            except (httpx.TimeoutException, httpx.HTTPError) as e:
+                logger.error(f"SuperU voice error (attempt {attempt + 1}): {e}")
+                if attempt == 0:
+                    await asyncio.sleep(0.5)
+                    continue
+                return False
+            except Exception as e:
+                logger.error(f"SuperU voice unexpected error: {e}", exc_info=True)
+                return False
     
     async def initiate_outbound_call(self, to_number: str, message: str) -> Dict[str, Any]:
         """Initiate proactive outbound call via SuperU"""
@@ -79,16 +86,21 @@ class VoiceAdapter(ChannelAdapter):
             "webhook_url": settings.superu_webhook_url
         }
         
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{SUPERU_API_URL}/initiate",
-                    headers=headers,
-                    json=payload,
-                    timeout=30.0
-                )
-                response.raise_for_status()
-                data = response.json()
-                return {"success": True, "call_id": data.get("call_id")}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.post(
+                        f"{SUPERU_API_URL}/initiate",
+                        headers=headers,
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    return {"success": True, "call_id": data.get("call_id")}
+            except (httpx.TimeoutException, httpx.HTTPError) as e:
+                if attempt == 0:
+                    await asyncio.sleep(0.5)
+                    continue
+                return {"success": False, "error": str(e)}
+            except Exception as e:
+                return {"success": False, "error": str(e)}

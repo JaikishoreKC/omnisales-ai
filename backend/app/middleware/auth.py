@@ -3,6 +3,7 @@ from fastapi import Request, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.datastructures import MutableHeaders
 from typing import Optional
+import secrets
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,15 @@ async def verify_api_key(
             detail="Missing authentication credentials"
         )
     
+    if not settings.api_secret_key:
+        logger.error("API_SECRET_KEY is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server auth misconfiguration"
+        )
+
     # Verify against API_SECRET_KEY from .env
-    if credentials.credentials != settings.api_secret_key:
+    if not secrets.compare_digest(credentials.credentials, settings.api_secret_key):
         logger.warning(f"Invalid API key attempt")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -6,10 +6,15 @@ import jwt
 from datetime import datetime, timedelta
 from typing import Optional, Dict
 from app.core.database import get_database
+from app.config import get_settings
 
-SECRET_KEY = "OPVOdT2UwAKAxH4F7AP0mpyAKCv_5N1a46uorxpbKQw"
+settings = get_settings()
+SECRET_KEY = settings.secret_key or settings.api_secret_key
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080  # 7 days
+
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY is not configured. Set SECRET_KEY or API_SECRET_KEY in .env")
 
 
 def hash_password(password: str) -> str:

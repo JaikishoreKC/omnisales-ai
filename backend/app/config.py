@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     mongo_uri: str
     db_name: str = "omnisales"
     openrouter_api_key: str = ""
+    groq_api_key: str = ""
     secret_key: str = ""
     api_secret_key: str = ""  # API key for authentication
     frontend_url: str = "http://localhost:5173"
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     
     # Ollama (OLMo-1B)
     ollama_api_url: str = "http://localhost:11434"
+    ollama_url: str = ""  # Optional alias for OLLAMA_URL env var
     
     # POS System
     pos_api_url: str = ""

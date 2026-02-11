@@ -11,7 +11,8 @@ from app.models.schemas import (
     Product,
     Order,
     ChatRequest,
-    ChatResponse
+    ChatResponse,
+    ApiResponse
 )
 
 
@@ -202,6 +203,23 @@ class TestChatRequestModel:
             channel="whatsapp"
         )
         assert request.channel == "whatsapp"
+
+
+class TestApiResponseModel:
+    """Test ApiResponse envelope"""
+
+    def test_api_response_defaults(self):
+        response = ApiResponse(success=True)
+        assert response.success is True
+        assert response.message == ""
+        assert response.error is None
+
+    def test_api_response_all_fields(self):
+        response = ApiResponse(success=False, data={"x": 1}, message="fail", error="bad")
+        assert response.success is False
+        assert response.data["x"] == 1
+        assert response.message == "fail"
+        assert response.error == "bad"
     
     def test_chat_request_requires_all_fields(self):
         """Test chat request requires user_id, session_id, message"""

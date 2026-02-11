@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import { requestPasswordReset, resetPassword } from '../services/api'
 
 const ForgotPasswordPage = () => {
   const [searchParams] = useSearchParams()
@@ -23,20 +21,18 @@ const ForgotPasswordPage = () => {
     setLoading(true)
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/request-reset`, {
-        email
-      })
+      const data = await requestPasswordReset({ email })
 
       // For demo purposes, since we're not sending emails yet
-      if (response.data.token) {
-        setResetToken(response.data.token)
+      if (data.token) {
+        setResetToken(data.token)
         setSuccess(true)
       } else {
         setSuccess(true)
       }
 
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to request password reset')
+      setError(err.message || 'Failed to request password reset')
     } finally {
       setLoading(false)
     }
@@ -59,7 +55,7 @@ const ForgotPasswordPage = () => {
     setLoading(true)
 
     try {
-      await axios.post(`${API_BASE_URL}/auth/reset-password`, {
+      await resetPassword({
         token: resetToken,
         new_password: newPassword
       })
@@ -72,7 +68,7 @@ const ForgotPasswordPage = () => {
       }, 2000)
 
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to reset password')
+      setError(err.message || 'Failed to reset password')
     } finally {
       setLoading(false)
     }
@@ -216,14 +212,14 @@ const ForgotPasswordPage = () => {
             to="/register"
             className="block text-gray-600 hover:underline text-sm"
           >
-            Don't have an account? Register
+            Don&apos;t have an account? Register
           </Link>
         </div>
 
         {!resetToken && (
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
             <p className="text-xs text-gray-600">
-              <strong>Note:</strong> For security, we'll send a password reset link to your email if an account exists. 
+              <strong>Note:</strong> For security, we&apos;ll send a password reset link to your email if an account exists. 
               The link expires in 1 hour.
             </p>
           </div>

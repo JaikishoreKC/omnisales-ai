@@ -60,9 +60,15 @@ const ChatPage = () => {
       addMessage(assistantMessage)
     } catch (error) {
       console.error('Error:', error)
+      const status = error?.status
+      const friendlyMessage = status === 429
+        ? 'We are getting a lot of requests. Please wait a moment and try again.'
+        : status === 401
+        ? 'Chat is unavailable. Missing or invalid API key.'
+        : 'Sorry, something went wrong. Please try again.'
       const errorMessage = {
         role: 'assistant',
-        content: 'Sorry, something went wrong. Please try again.',
+        content: friendlyMessage,
         source: 'chat-page'
       }
       addMessage(errorMessage)

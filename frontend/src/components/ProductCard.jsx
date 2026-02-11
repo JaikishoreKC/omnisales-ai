@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import PropTypes from 'prop-types'
 import { useCart } from '../hooks/useCart'
 import { useToast } from '../context/ToastContext'
 import { useNavigate } from 'react-router-dom'
@@ -86,9 +87,13 @@ const ProductCard = ({ product }) => {
       {/* Product Image */}
       <div className="relative h-48 bg-gray-200">
         <img
-          src={product.image}
-          alt={product.name}
+          src={product.image || `https://via.placeholder.com/300x300?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`}
+          alt={product.name || 'Product image'}
           className="w-full h-full object-cover"
+          onError={(e) => {
+            e.target.onerror = null
+            e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="300"%3E%3Crect width="300" height="300" fill="%23e5e7eb"/%3E%3Ctext x="50%25" y="50%25" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="32" fill="%239ca3af"%3E%F0%9F%93%A6%3C/text%3E%3C/svg%3E'
+          }}
         />
         {product.stock < 10 && product.stock > 0 && (
           <span className="absolute top-2 right-2 bg-orange-500 text-white text-xs px-2 py-1 rounded">
@@ -108,16 +113,16 @@ const ProductCard = ({ product }) => {
           {product.name}
         </h3>
         <p className="text-sm text-gray-600 mb-3 line-clamp-2">
-          {product.description}
+          {product.description || `${product.category || 'Product'} details coming soon.`}
         </p>
 
         {/* Rating */}
         <div className="flex items-center mb-3">
           <div className="flex text-yellow-400 text-sm">
-            {'⭐'.repeat(Math.floor(product.rating))}
+            {'⭐'.repeat(Math.floor(product.rating || 4.5))}
           </div>
           <span className="ml-1 text-sm text-gray-600">
-            {product.rating}
+            {(product.rating || 4.5).toFixed(1)}
           </span>
         </div>
 
@@ -172,3 +177,16 @@ const ProductCard = ({ product }) => {
 }
 
 export default ProductCard
+
+ProductCard.propTypes = {
+  product: PropTypes.shape({
+    product_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    name: PropTypes.string,
+    price: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    stock: PropTypes.number,
+    image: PropTypes.string,
+    description: PropTypes.string,
+    category: PropTypes.string,
+    rating: PropTypes.number
+  }).isRequired
+}

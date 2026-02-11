@@ -142,9 +142,15 @@ Please provide detailed information, comparisons with similar products, buying a
       })
     } catch (error) {
       console.error('Error sending product context:', error)
+      const status = error?.status
+      const fallbackMessage = status === 429
+        ? 'We are getting a lot of requests. Please try again shortly.'
+        : status === 401
+        ? 'Chat is unavailable. Missing or invalid API key.'
+        : 'I received your product inquiry. How can I assist you?'
       addMessage({
         role: 'assistant',
-        content: 'I received your product inquiry. How can I assist you?',
+        content: fallbackMessage,
         source: 'product-page'
       })
     } finally {

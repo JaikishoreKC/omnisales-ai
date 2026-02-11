@@ -46,7 +46,7 @@ export const useCart = () => {
     window.addEventListener('storage', handleStorageChange)
 
     // Custom event for same-window updates
-    const handleCustomCartUpdate = (e) => {
+    const handleCustomCartUpdate = () => {
       console.log('🔄 Cart updated from custom event')
       const savedCart = localStorage.getItem(CART_STORAGE_KEY)
       if (savedCart) {

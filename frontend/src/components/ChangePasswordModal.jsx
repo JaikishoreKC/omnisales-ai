@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import PropTypes from 'prop-types'
+import { changePassword } from '../services/api'
 
 const ChangePasswordModal = ({ isOpen, onClose, token }) => {
   const [oldPassword, setOldPassword] = useState('')
@@ -35,16 +34,10 @@ const ChangePasswordModal = ({ isOpen, onClose, token }) => {
     setLoading(true)
 
     try {
-      await axios.post(
-        `${API_BASE_URL}/auth/change-password`,
-        {
-          old_password: oldPassword,
-          new_password: newPassword
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      )
+      await changePassword({
+        old_password: oldPassword,
+        new_password: newPassword
+      }, token)
 
       setSuccess(true)
       setOldPassword('')
@@ -58,7 +51,7 @@ const ChangePasswordModal = ({ isOpen, onClose, token }) => {
       }, 2000)
 
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to change password')
+      setError(err.message || 'Failed to change password')
     } finally {
       setLoading(false)
     }
@@ -176,3 +169,9 @@ const ChangePasswordModal = ({ isOpen, onClose, token }) => {
 }
 
 export default ChangePasswordModal
+
+ChangePasswordModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  token: PropTypes.string
+}

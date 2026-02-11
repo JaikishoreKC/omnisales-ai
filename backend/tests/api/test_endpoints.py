@@ -13,7 +13,9 @@ class TestHealthEndpoint:
         """Test health endpoint returns 200"""
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json()["status"] == "ok"
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data["success"] is True
     
     def test_health_check_no_auth_required(self, client):
         """Test health endpoint is public (no auth needed)"""
@@ -36,7 +38,7 @@ class TestRootEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "message" in data
-        assert "status" in data
+        assert data["success"] is True
     
     def test_root_endpoint_no_auth_required(self, client):
         """Test root endpoint is public"""
@@ -47,12 +49,12 @@ class TestRootEndpoint:
 class TestChatEndpoint:
     """Test /chat endpoint"""
     
-    def test_chat_requires_auth(self, client, chat_payload):
+    def test_chat_requires_auth(self, client, chat_payload, mock_chat_dependencies):
         """Test chat endpoint requires authentication"""
         response = client.post("/chat", json=chat_payload)
         assert response.status_code == 403  # FastAPI returns 403 for missing auth
     
-    def test_chat_with_invalid_api_key(self, client, chat_payload):
+    def test_chat_with_invalid_api_key(self, client, chat_payload, mock_chat_dependencies):
         """Test chat rejects invalid API key"""
         response = client.post(
             "/chat",
@@ -60,16 +62,16 @@ class TestChatEndpoint:
             json=chat_payload
         )
         assert response.status_code == 401
-        assert "Invalid API key" in response.json()["detail"]
+        assert "Invalid API key" in response.json()["error"]
     
-    def test_chat_with_valid_auth(self, client, auth_headers, chat_payload):
+    def test_chat_with_valid_auth(self, client, auth_headers, chat_payload, mock_chat_dependencies):
         """Test chat accepts valid authentication"""
         response = client.post("/chat", headers=auth_headers, json=chat_payload)
         # May return 200 or timeout, but shouldn't be 401/403
         assert response.status_code != 401
         assert response.status_code != 403
     
-    def test_chat_validates_required_fields(self, client, auth_headers):
+    def test_chat_validates_required_fields(self, client, auth_headers, mock_chat_dependencies):
         """Test chat validates required fields"""
         # Missing message field
         response = client.post(
@@ -79,7 +81,7 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_validates_user_id_format(self, client, auth_headers):
+    def test_chat_validates_user_id_format(self, client, auth_headers, mock_chat_dependencies):
         """Test chat validates user_id format"""
         response = client.post(
             "/chat",
@@ -92,7 +94,7 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_validates_message_length(self, client, auth_headers):
+    def test_chat_validates_message_length(self, client, auth_headers, mock_chat_dependencies):
         """Test chat rejects messages over 5000 chars"""
         long_message = "a" * 5001
         response = client.post(
@@ -106,7 +108,7 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_validates_channel(self, client, auth_headers):
+    def test_chat_validates_channel(self, client, auth_headers, mock_chat_dependencies):
         """Test chat validates channel field"""
         response = client.post(
             "/chat",
@@ -120,7 +122,7 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_accepts_valid_channels(self, client, auth_headers):
+    def test_chat_accepts_valid_channels(self, client, auth_headers, mock_chat_dependencies):
         """Test chat accepts valid channel values"""
         valid_channels = ["web", "whatsapp", "voice"]
         for channel in valid_channels:
@@ -137,7 +139,7 @@ class TestChatEndpoint:
             # Should not be validation error
             assert response.status_code != 422
     
-    def test_chat_rejects_empty_message(self, client, auth_headers):
+    def test_chat_rejects_empty_message(self, client, auth_headers, mock_chat_dependencies):
         """Test chat rejects empty messages"""
         response = client.post(
             "/chat",
@@ -150,7 +152,7 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_rejects_whitespace_only_message(self, client, auth_headers):
+    def test_chat_rejects_whitespace_only_message(self, client, auth_headers, mock_chat_dependencies):
         """Test chat rejects whitespace-only messages"""
         response = client.post(
             "/chat",
@@ -187,7 +189,7 @@ class TestWhatsAppWebhook:
             json={"invalid": "payload"}
         )
         assert response.status_code == 400
-        assert "Invalid webhook payload" in response.json()["detail"]
+        assert "Invalid webhook payload" in response.json()["error"]
     
     def test_whatsapp_webhook_post_validates_structure(self, client):
         """Test WhatsApp webhook validates payload structure"""
@@ -212,7 +214,7 @@ class TestSuperUWebhook:
             json={"invalid": "payload"}
         )
         assert response.status_code == 400
-        assert "Invalid webhook payload" in response.json()["detail"]
+        assert "Invalid webhook payload" in response.json()["error"]
     
     def test_superu_webhook_validates_required_fields(self, client):
         """Test SuperU webhook requires all fields"""

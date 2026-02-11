@@ -1,13 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { sendMessage } from '../services/api'
-import { useStore } from '../store/useStore'
+import { sendChatMessage } from '../services/api'
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [sessionId, setSessionId] = useState(null)
   const messagesEndRef = useRef(null)
-  const { currentConversationId, setCurrentConversationId } = useStore()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -27,16 +26,19 @@ const ChatInterface = () => {
     setLoading(true)
 
     try {
-      const response = await sendMessage({
+      const nextSessionId = sessionId || `session_${Date.now()}`
+      if (!sessionId) {
+        setSessionId(nextSessionId)
+      }
+
+      const response = await sendChatMessage({
+        user_id: `user_${Math.random().toString(36).slice(2, 8)}`,
+        session_id: nextSessionId,
         message: input,
-        conversation_id: currentConversationId,
-        user_id: 'user123',
-        agent_type: 'sales'
+        channel: 'web'
       })
 
-      setCurrentConversationId(response.conversation_id)
-      
-      const assistantMessage = { role: 'assistant', content: response.response }
+      const assistantMessage = { role: 'assistant', content: response.reply }
       setMessages(prev => [...prev, assistantMessage])
     } catch (error) {
       console.error('Error sending message:', error)

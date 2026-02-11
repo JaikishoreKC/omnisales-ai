@@ -129,9 +129,15 @@ Please help me with:
       })
     } catch (error) {
       console.error('Error sending cart context:', error)
+      const status = error?.status
+      const fallbackMessage = status === 429
+        ? 'We are getting a lot of requests. Please try again shortly.'
+        : status === 401
+        ? 'Chat is unavailable. Missing or invalid API key.'
+        : 'I can see your cart contents. How can I help you with your purchase decision?'
       addMessage({
         role: 'assistant',
-        content: 'I can see your cart contents. How can I help you with your purchase decision?',
+        content: fallbackMessage,
         source: 'cart-page'
       })
     } finally {

@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import { getAdminUserDetail, getProfile } from '../services/api'
 
 const UserDetailPage = () => {
   const { userId } = useParams()
@@ -33,26 +31,22 @@ const UserDetailPage = () => {
     }
     
     fetchUserDetails()
-  }, [targetUserId])
+  }, [targetUserId, token, userId, user, isAdmin, navigate])
 
   const fetchUserDetails = async () => {
     setLoading(true)
     setError(null)
     try {
-      // Admin can view any user, regular users use their own endpoint
-      const endpoint = isAdmin() && userId 
-        ? `${API_BASE_URL}/admin/users/${targetUserId}`
-        : `${API_BASE_URL}/profile/${targetUserId || user?.user_id}`
-      
-      const response = await axios.get(endpoint, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-      setUserDetails(response.data.user)
-      setCurrentOrders(response.data.current_orders || [])
-      setPastOrders(response.data.past_orders || [])
+      const data = isAdmin() && userId
+        ? await getAdminUserDetail(targetUserId, token)
+        : await getProfile(targetUserId || user?.user_id, token)
+
+      setUserDetails(data.user)
+      setCurrentOrders(data.current_orders || [])
+      setPastOrders(data.past_orders || [])
     } catch (err) {
       console.error('Failed to fetch user details:', err)
-      setError(err.response?.data?.detail || 'Failed to load profile')
+      setError(err.message || 'Failed to load profile')
     } finally {
       setLoading(false)
     }

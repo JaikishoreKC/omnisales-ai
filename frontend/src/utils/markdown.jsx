@@ -1,32 +1,77 @@
-// Simple markdown-like text formatter for chat messages
-export const formatMarkdown = (text) => {
-  if (!text) return ''
-  
-  // Replace **bold** with <strong>
-  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  
-  // Replace *italic* with <em>
-  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  
-  // Replace `code` with <code>
-  text = text.replace(/`(.+?)`/g, '<code class="bg-gray-200 px-1 rounded">$1</code>')
-  
-  // Replace links [text](url) with <a>
-  text = text.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline">$1</a>')
-  
-  // Replace line breaks
-  text = text.replace(/\n/g, '<br>')
-  
-  return text
+import React from 'react'
+import PropTypes from 'prop-types'
+
+const tokenRegex = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g
+
+const renderInline = (text, keyPrefix) => {
+  const parts = text.split(tokenRegex).filter(Boolean)
+
+  return parts.map((part, index) => {
+    const key = `${keyPrefix}-${index}`
+
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={key}>{part.slice(2, -2)}</strong>
+    }
+
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return <em key={key}>{part.slice(1, -1)}</em>
+    }
+
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code key={key} className="bg-gray-200 px-1 rounded">
+          {part.slice(1, -1)}
+        </code>
+      )
+    }
+
+    if (part.startsWith('[') && part.includes('](') && part.endsWith(')')) {
+      const textEnd = part.indexOf('](')
+      const linkText = part.slice(1, textEnd)
+      const url = part.slice(textEnd + 2, -1)
+      const isSafeUrl = /^https?:\/\//i.test(url)
+
+      if (isSafeUrl) {
+        return (
+          <a
+            key={key}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 underline"
+          >
+            {linkText}
+          </a>
+        )
+      }
+
+      return <span key={key}>{linkText}</span>
+    }
+
+    return <span key={key}>{part}</span>
+  })
 }
 
 export const MarkdownText = ({ text, className = '' }) => {
-  const formattedText = formatMarkdown(text)
-  
+  if (!text) {
+    return <div className={className} />
+  }
+
+  const lines = text.split('\n')
+
   return (
-    <div 
-      className={className}
-      dangerouslySetInnerHTML={{ __html: formattedText }}
-    />
+    <div className={className}>
+      {lines.map((line, lineIndex) => (
+        <React.Fragment key={`line-${lineIndex}`}>
+          {renderInline(line, `line-${lineIndex}`)}
+          {lineIndex < lines.length - 1 && <br />}
+        </React.Fragment>
+      ))}
+    </div>
   )
+}
+
+MarkdownText.propTypes = {
+  text: PropTypes.string,
+  className: PropTypes.string
 }

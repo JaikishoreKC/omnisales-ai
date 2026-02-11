@@ -12,6 +12,14 @@ async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
 
 async def save_message(session_id: str, role: str, text: str) -> None:
     db = get_database()
+    session = await db.sessions.find_one({"session_id": session_id}, {"last_messages": 1})
+    if session:
+        last_messages = session.get("last_messages", [])
+        if last_messages:
+            last = last_messages[-1]
+            if last.get("role") == role and last.get("text") == text:
+                return
+
     message = {
         "role": role,
         "text": text,

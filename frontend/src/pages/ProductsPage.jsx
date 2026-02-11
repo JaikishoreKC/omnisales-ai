@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import ProductCard from '../components/ProductCard'
 import { getProducts } from '../services/api'
+import useChatStore from '../store/chatStore'
 
 const ProductsPage = () => {
   const [searchParams] = useSearchParams()
@@ -9,6 +10,7 @@ const ProductsPage = () => {
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [error, setError] = useState(null)
+  const openAssistant = useChatStore((state) => state.openAssistant)
 
   const categories = [
     { id: 'all', name: 'All Products', icon: '🛍️' },
@@ -68,7 +70,7 @@ const ProductsPage = () => {
         <p className="text-gray-600">Discover amazing products with AI-powered assistance</p>
         {searchQuery && (
           <p className="mt-2 text-sm text-blue-600">
-            Search results for: "{searchQuery}"
+            Search results for: &quot;{searchQuery}&quot;
           </p>
         )}
       </div>
@@ -124,9 +126,9 @@ const ProductsPage = () => {
             <Link key={product.product_id} to={`/products/${product.product_id}`}>
               <ProductCard product={{
                 ...product,
-                image: `https://via.placeholder.com/300x300?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`,
-                rating: 4.5,
-                description: `${product.category} - ${product.name}`
+                image: product.image || `https://via.placeholder.com/300x300?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`,
+                rating: product.rating || 4.5,
+                description: product.description || `${product.category} - ${product.name}`
               }} />
             </Link>
           ))}
@@ -138,7 +140,7 @@ const ProductsPage = () => {
         <h2 className="text-2xl font-bold mb-2">Need Help Finding Products?</h2>
         <p className="mb-4">Ask our AI assistant! It can help you find exactly what you need.</p>
         <button
-          onClick={() => document.querySelector('[class*="ChatWidget"]')?.click()}
+          onClick={openAssistant}
           className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition"
         >
           💬 Chat with AI Assistant

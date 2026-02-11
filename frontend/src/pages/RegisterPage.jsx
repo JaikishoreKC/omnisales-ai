@@ -1,9 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import { registerUser } from '../services/api'
 
 const RegisterPage = () => {
   const [formData, setFormData] = useState({
@@ -38,16 +36,16 @@ const RegisterPage = () => {
     setLoading(true)
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/register`, {
+      const data = await registerUser({
         name: formData.name,
         email: formData.email,
         password: formData.password
       })
 
-      login(response.data.user, response.data.token)
+      login(data.user, data.token)
       navigate('/')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.')
+      setError(err.message || 'Registration failed. Please try again.')
     } finally {
       setLoading(false)
     }

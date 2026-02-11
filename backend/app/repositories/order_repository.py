@@ -20,7 +20,8 @@ async def create_order(user_id: str, items: List[Dict], total_amount: float, shi
         "updated_at": datetime.utcnow()
     }
     
-    await db.orders.insert_one(order)
+    result = await db.orders.insert_one(order)
+    order["_id"] = result.inserted_id
     return order
 
 

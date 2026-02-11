@@ -1,9 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import axios from 'axios'
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+import { loginUser } from '../services/api'
 
 const LoginPage = () => {
   const [email, setEmail] = useState('')
@@ -19,15 +17,11 @@ const LoginPage = () => {
     setLoading(true)
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/auth/login`, {
-        email,
-        password
-      })
-
-      login(response.data.user, response.data.token)
+      const data = await loginUser({ email, password })
+      login(data.user, data.token)
       navigate('/')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed. Please check your credentials.')
+      setError(err.message || 'Login failed. Please check your credentials.')
     } finally {
       setLoading(false)
     }
@@ -92,7 +86,7 @@ const LoginPage = () => {
           </form>
 
           <div className="mt-6 text-center text-sm text-gray-600">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link to="/register" className="text-blue-600 hover:underline font-medium">
               Sign up
             </Link>

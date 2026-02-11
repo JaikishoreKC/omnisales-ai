@@ -9,7 +9,9 @@ services:
         sync: false
       - key: DB_NAME
         value: omnisales
-      - key: OPENROUTER_API_KEY
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OLLAMA_URL
         sync: false
       - key: SECRET_KEY
         sync: false

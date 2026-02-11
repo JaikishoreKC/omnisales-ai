@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
+import PropTypes from 'prop-types'
 
 const ConfirmContext = createContext()
 
@@ -43,12 +44,6 @@ export const ConfirmProvider = ({ children }) => {
     })
   }, [])
 
-  const handleClose = () => {
-    if (confirmState.onCancel) {
-      confirmState.onCancel()
-    }
-  }
-
   return (
     <ConfirmContext.Provider value={{ confirm }}>
       {children}
@@ -85,4 +80,8 @@ export const ConfirmProvider = ({ children }) => {
       )}
     </ConfirmContext.Provider>
   )
+}
+
+ConfirmProvider.propTypes = {
+  children: PropTypes.node
 }

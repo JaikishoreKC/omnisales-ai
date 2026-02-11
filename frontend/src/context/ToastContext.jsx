@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react'
+import PropTypes from 'prop-types'
 
 const ToastContext = createContext()
 
@@ -54,4 +55,8 @@ export const ToastProvider = ({ children }) => {
       </div>
     </ToastContext.Provider>
   )
+}
+
+ToastProvider.propTypes = {
+  children: PropTypes.node
 }

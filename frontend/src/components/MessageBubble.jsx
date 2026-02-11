@@ -1,4 +1,5 @@
 import React from 'react'
+import PropTypes from 'prop-types'
 import ProductCard from './ProductCard'
 import { MarkdownText } from '../utils/markdown'
 
@@ -57,3 +58,17 @@ const MessageBubble = ({ message }) => {
 }
 
 export default MessageBubble
+
+MessageBubble.propTypes = {
+  message: PropTypes.shape({
+    role: PropTypes.string.isRequired,
+    content: PropTypes.string,
+    agent: PropTypes.string,
+    actions: PropTypes.arrayOf(
+      PropTypes.shape({
+        type: PropTypes.string,
+        data: PropTypes.arrayOf(PropTypes.object)
+      })
+    )
+  }).isRequired
+}
