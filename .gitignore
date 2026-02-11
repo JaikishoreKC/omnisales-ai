@@ -52,3 +52,28 @@ Thumbs.db
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Temporary and debug files (prevent future clutter)
+*.psi
+temp*
+tmp*
+debug*
+scratch*
+trial*
+check_*.py
+verify_*.py
+test_*.ps1
+notes.txt
+random_*
+
+# Backup files
+*.bak
+*.old
+*_backup.*
+*_copy.*
+*_final.*
+*_v1.*
+*_draft.*
+
+# Logs
+*.log

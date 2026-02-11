@@ -1,0 +1,143 @@
+import React, { useState, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import ProductCard from '../components/ProductCard'
+import { getProducts } from '../services/api'
+
+const ProductsPage = () => {
+  const [searchParams] = useSearchParams()
+  const [products, setProducts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [error, setError] = useState(null)
+
+  const categories = [
+    { id: 'all', name: 'All Products', icon: '🛍️' },
+    { id: 'electronics', name: 'Electronics', icon: '💻' },
+    { id: 'shirts', name: 'Shirts', icon: '👕' },
+    { id: 'shoes', name: 'Shoes', icon: '👟' },
+    { id: 'jeans', name: 'Jeans', icon: '👖' }
+  ]
+
+  const searchQuery = searchParams.get('search') || ''
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const params = {
+          limit: 50
+        }
+        
+        if (selectedCategory !== 'all') {
+          params.category = selectedCategory
+        }
+        
+        if (searchQuery) {
+          params.search = searchQuery
+        }
+        
+        const data = await getProducts(params)
+        setProducts(data.products || [])
+      } catch (err) {
+        console.error('Error fetching products:', err)
+        setError('Failed to load products. Please try again.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProducts()
+  }, [selectedCategory, searchQuery])
+
+  const filteredProducts = products
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Our Products</h1>
+        <p className="text-gray-600">Discover amazing products with AI-powered assistance</p>
+        {searchQuery && (
+          <p className="mt-2 text-sm text-blue-600">
+            Search results for: "{searchQuery}"
+          </p>
+        )}
+      </div>
+
+      {/* Categories */}
+      <div className="mb-8 overflow-x-auto">
+        <div className="flex space-x-3 pb-2">
+          {categories.map(category => (
+            <button
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id)}
+              className={`px-6 py-3 rounded-lg font-medium transition whitespace-nowrap ${
+                selectedCategory === category.id
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {category.icon} {category.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Products Grid */}
+      {loading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+            <div key={i} className="bg-white rounded-lg p-4 animate-pulse">
+              <div className="w-full h-48 bg-gray-200 rounded-lg mb-4"></div>
+              <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div className="text-center py-16 bg-red-50 rounded-lg">
+          <p className="text-red-600 text-lg">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 text-blue-600 hover:underline"
+          >
+            Try Again
+          </button>
+        </div>
+      ) : filteredProducts.length === 0 ? (
+        <div className="text-center py-16">
+          <p className="text-gray-500 text-lg">No products found</p>
+          <p className="text-gray-400 text-sm mt-2">Try a different category or search</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {filteredProducts.map(product => (
+            <Link key={product.product_id} to={`/products/${product.product_id}`}>
+              <ProductCard product={{
+                ...product,
+                image: `https://via.placeholder.com/300x300?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`,
+                rating: 4.5,
+                description: `${product.category} - ${product.name}`
+              }} />
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {/* Help Banner */}
+      <div className="mt-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-8 text-white text-center">
+        <h2 className="text-2xl font-bold mb-2">Need Help Finding Products?</h2>
+        <p className="mb-4">Ask our AI assistant! It can help you find exactly what you need.</p>
+        <button
+          onClick={() => document.querySelector('[class*="ChatWidget"]')?.click()}
+          className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition"
+        >
+          💬 Chat with AI Assistant
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export default ProductsPage
