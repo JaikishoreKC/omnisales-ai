@@ -8,7 +8,7 @@ This guide covers local development for the backend and frontend in this repo.
 - Node.js 18+
 - MongoDB (local or Atlas)
 - Optional LLM provider:
-  - Groq (cloud) with `GROQ_API_KEY`
+  - OpenRouter (cloud) with `OPENROUTER_API_KEY`
   - Ollama (local) with `OLLAMA_URL` or `OLLAMA_API_URL`
 
 ## Backend
@@ -32,7 +32,7 @@ Edit `backend/.env` and set at minimum:
 - `MONGO_URI`
 - `API_SECRET_KEY`
 - `SECRET_KEY` (or rely on `API_SECRET_KEY` as a fallback)
-- `GROQ_API_KEY` or `OLLAMA_URL`
+- `OPENROUTER_API_KEY` or `OLLAMA_URL`
 
 Generate keys if needed:
 
@@ -93,5 +93,5 @@ curl -X POST http://localhost:8000/chat \
 ## Troubleshooting
 
 - Mongo connection errors: verify `MONGO_URI` and network access.
-- Groq errors: check `GROQ_API_KEY` and model access.
+- OpenRouter errors: check `OPENROUTER_API_KEY` and model access.
 - Ollama errors: ensure Ollama is running and `OLLAMA_URL` is reachable.

@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     mongo_uri: str
     db_name: str = "omnisales"
     openrouter_api_key: str = ""
-    groq_api_key: str = ""
-    groq_model: str = "llama-3.1-8b-instant"
+    openrouter_model: str = "openrouter/auto"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     secret_key: str = ""
     api_secret_key: str = ""  # API key for authentication
     frontend_url: str = "http://localhost:5173"

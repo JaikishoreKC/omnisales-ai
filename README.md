@@ -1,6 +1,6 @@
 # OmniSales AI
 
-OmniSales AI is a multi-channel sales assistant with a FastAPI backend and a React frontend. It supports web, WhatsApp, and voice channels, and routes requests through specialized agents with Groq as the primary LLM provider and Ollama as a fallback.
+OmniSales AI is a multi-channel sales assistant with a FastAPI backend and a React frontend. It supports web, WhatsApp, and voice channels, and routes requests through specialized agents with OpenRouter as the primary LLM provider and Ollama as a fallback.
 
 ## Quick start
 
@@ -21,7 +21,7 @@ See [docs/SETUP.md](docs/SETUP.md) for the full walkthrough.
 
 - Backend: FastAPI, Motor (MongoDB), Pydantic, SlowAPI
 - Frontend: React, Vite, Tailwind, Zustand
-- LLM: Groq (primary), Ollama (fallback)
+- LLM: OpenRouter (primary), Ollama (fallback)
 
 ## API notes
 

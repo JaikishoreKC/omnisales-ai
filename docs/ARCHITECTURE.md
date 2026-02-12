@@ -8,7 +8,7 @@ OmniSales AI is a FastAPI backend with a React frontend and a MongoDB datastore.
 - `app.orchestrator`: Intent detection, context building, and request routing.
 - `app.agents`: Business logic for recommendations, inventory, payments, tracking, and support.
 - `app.repositories`: MongoDB access and persistence helpers.
-- `app.services`: LLM provider routing (Groq primary, Ollama fallback).
+- `app.services`: LLM provider routing (OpenRouter primary, Ollama fallback).
 - `app.adapters`: Channel-specific adapters (web, WhatsApp, voice).
 - `app.utils`: Serialization, response helpers, parsing, logging context.
 
@@ -19,7 +19,7 @@ Client -> POST /chat
   -> auth + rate limit
   -> save user message
   -> orchestrator routes to agent
-  -> LLM provider (Groq or Ollama)
+  -> LLM provider (OpenRouter or Ollama)
   -> save assistant message
   -> ChatResponse
 ```
@@ -28,7 +28,7 @@ Client -> POST /chat
 
 The LLM service checks providers in order:
 
-1) Groq if `GROQ_API_KEY` is set
+1) OpenRouter if `OPENROUTER_API_KEY` is set
 2) Ollama if `OLLAMA_URL` or `OLLAMA_API_URL` is set
 
 ## Data model
