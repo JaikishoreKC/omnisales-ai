@@ -10,7 +10,12 @@ const ProductsPage = () => {
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [error, setError] = useState(null)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
   const openAssistant = useChatStore((state) => state.openAssistant)
+  const pageSize = 20
+  const maxPageButtons = 5
 
   const categories = [
     { id: 'all', name: 'All Products', icon: '🛍️' },
@@ -31,12 +36,17 @@ const ProductsPage = () => {
   }, [categoryParam])
 
   useEffect(() => {
+    setPage(1)
+  }, [selectedCategory, searchQuery])
+
+  useEffect(() => {
     const fetchProducts = async () => {
       setLoading(true)
       setError(null)
       try {
         const params = {
-          limit: 50
+          limit: pageSize,
+          skip: (page - 1) * pageSize
         }
         
         if (selectedCategory !== 'all') {
@@ -49,6 +59,8 @@ const ProductsPage = () => {
         
         const data = await getProducts(params)
         setProducts(data.products || [])
+        setTotalPages(data.pages || 1)
+        setTotalCount(data.total || 0)
       } catch (err) {
         console.error('Error fetching products:', err)
         setError('Failed to load products. Please try again.')
@@ -58,9 +70,7 @@ const ProductsPage = () => {
     }
 
     fetchProducts()
-  }, [selectedCategory, searchQuery])
-
-  const filteredProducts = products
+  }, [selectedCategory, searchQuery, page])
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -115,23 +125,77 @@ const ProductsPage = () => {
             Try Again
           </button>
         </div>
-      ) : filteredProducts.length === 0 ? (
+      ) : products.length === 0 ? (
         <div className="text-center py-16">
           <p className="text-gray-500 text-lg">No products found</p>
           <p className="text-gray-400 text-sm mt-2">Try a different category or search</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {filteredProducts.map(product => (
-            <Link key={product.product_id} to={`/products/${product.product_id}`}>
-              <ProductCard product={{
-                ...product,
-                image: product.image || `https://via.placeholder.com/300x300?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`,
-                rating: product.rating || 4.5,
-                description: product.description || `${product.category} - ${product.name}`
-              }} />
-            </Link>
-          ))}
+        <div>
+          <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
+            <span>Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalCount)} of {totalCount}</span>
+            <span>Page {page} of {totalPages}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {products.map(product => (
+              <Link key={product.product_id} to={`/products/${product.product_id}`}>
+                <ProductCard product={{
+                  ...product,
+                  image: product.image || `https://via.placeholder.com/300x300?text=${encodeURIComponent(product.name.split(' ').slice(0, 2).join(' '))}`,
+                  rating: product.rating || 4.5,
+                  description: product.description || `${product.category} - ${product.name}`
+                }} />
+              </Link>
+            ))}
+          </div>
+          <div className="mt-8 flex items-center justify-center gap-3">
+            <button
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              className="px-3 py-2 rounded border text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              First
+            </button>
+            <button
+              onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+              disabled={page === 1}
+              className="px-3 py-2 rounded border text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Prev
+            </button>
+            {Array.from({ length: Math.min(maxPageButtons, totalPages) }, (_, index) => {
+              const halfRange = Math.floor(maxPageButtons / 2)
+              const startPage = Math.max(1, Math.min(page - halfRange, totalPages - maxPageButtons + 1))
+              const pageNumber = startPage + index
+              return (
+                <button
+                  key={pageNumber}
+                  onClick={() => setPage(pageNumber)}
+                  className={`px-3 py-2 rounded border text-sm ${
+                    pageNumber === page
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'hover:bg-gray-100'
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              )
+            })}
+            <button
+              onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={page >= totalPages}
+              className="px-3 py-2 rounded border text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={page >= totalPages}
+              className="px-3 py-2 rounded border text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Last
+            </button>
+          </div>
         </div>
       )}
 

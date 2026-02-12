@@ -141,7 +141,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 # CORS configuration - restrict in production
-allowed_origins = [settings.frontend_url]
+allowed_origins = [origin.strip() for origin in settings.frontend_url.split(",") if origin.strip()]
 if settings.environment == "development":
     allowed_origins.append("http://localhost:5173")
     allowed_origins.append("http://localhost:3000")
@@ -150,8 +150,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
