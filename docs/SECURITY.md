@@ -2,7 +2,8 @@
 
 ## Authentication
 
-- `/chat` requires a Bearer token using `API_SECRET_KEY`.
+- Web chat uses a session ID for guests and a user token for authenticated users.
+- Non-web channels require a Bearer token using `API_SECRET_KEY`.
 - Auth endpoints issue JWTs signed with `SECRET_KEY`.
 
 ## Rate limiting

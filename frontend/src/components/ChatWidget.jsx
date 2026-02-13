@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { sendChatMessage } from '../services/api'
 import MessageBubble from './MessageBubble'
 import useChatStore from '../store/chatStore'
+import { shallow } from 'zustand/shallow'
+import { useAuth } from '../context/AuthContext'
+import { getChatSessionId } from '../utils/session'
+import { sendChatWithStore } from '../utils/chatFlow'
 
 const ChatWidget = () => {
   const navigate = useNavigate()
   const [input, setInput] = useState('')
   const messagesEndRef = useRef(null)
   const inputRef = useRef(null)
-  const widgetRef = useRef(null)
   
   // Resizing state
   const [size, setSize] = useState(() => {
@@ -20,14 +22,37 @@ const ChatWidget = () => {
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 })
 
   // Use Zustand store for ALL state including isOpen
-  const messages = useChatStore((state) => state.messages)
-  const isLoading = useChatStore((state) => state.isLoading)
-  const isOpen = useChatStore((state) => state.isAssistantOpen)
-  const addMessage = useChatStore((state) => state.addMessage)
-  const setLoading = useChatStore((state) => state.setLoading)
-  const getSessionId = useChatStore((state) => state.getSessionId)
-  const openAssistant = useChatStore((state) => state.openAssistant)
-  const closeAssistant = useChatStore((state) => state.closeAssistant)
+  const {
+    messages,
+    isLoading,
+    isOpen,
+    ownerKey,
+    addMessage,
+    startRequest,
+    finishRequest,
+    getSessionId,
+    openAssistant,
+    closeAssistant,
+    setSessionId,
+    setMessages
+  } = useChatStore(
+    (state) => ({
+      messages: state.messages,
+      isLoading: state.isLoading,
+      isOpen: state.isAssistantOpen,
+      ownerKey: state.ownerKey,
+      addMessage: state.addMessage,
+      startRequest: state.startRequest,
+      finishRequest: state.finishRequest,
+      getSessionId: state.getSessionId,
+      openAssistant: state.openAssistant,
+      closeAssistant: state.closeAssistant,
+      setSessionId: state.setSessionId,
+      setMessages: state.setMessages
+    }),
+    shallow
+  )
+  const { user } = useAuth()
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -37,6 +62,10 @@ const ChatWidget = () => {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    setSessionId(getChatSessionId(user))
+  }, [user, setSessionId])
 
   // Auto-focus input when assistant opens
   useEffect(() => {
@@ -117,44 +146,18 @@ const ChatWidget = () => {
 
     addMessage(userMessage)
     setInput('')
-    setLoading(true)
-
-    try {
-      const sessionId = getSessionId()
-      
-      const response = await sendChatMessage({
-        user_id: 'user_' + Math.random().toString(36).substr(2, 9),
-        session_id: sessionId,
-        message: input,
-        channel: 'web'
-      })
-
-      const assistantMessage = {
-        role: 'assistant',
-        content: response.reply,
-        agent: response.agent_used,
-        actions: response.actions,
-        source: 'floating-widget'
-      }
-
-      addMessage(assistantMessage)
-    } catch (error) {
-      console.error('Error:', error)
-      const status = error?.status
-      const friendlyMessage = status === 429
-        ? 'We are getting a lot of requests. Please wait a moment and try again.'
-        : status === 401
-        ? 'Chat is unavailable. Missing or invalid API key.'
-        : 'Sorry, something went wrong. Please try again.'
-      const errorMessage = {
-        role: 'assistant',
-        content: friendlyMessage,
-        source: 'floating-widget'
-      }
-      addMessage(errorMessage)
-    } finally {
-      setLoading(false)
-    }
+    await sendChatWithStore({
+      message: input,
+      user,
+      source: 'floating-widget',
+      getSessionId,
+      ownerKey,
+      startRequest,
+      finishRequest,
+      addMessage,
+      getStoreState: useChatStore.getState,
+      setMessages
+    })
   }
 
   const handleKeyPress = (e) => {
@@ -191,7 +194,6 @@ const ChatWidget = () => {
       {/* Chat Widget Window */}
       {isOpen && (
         <div 
-          ref={widgetRef}
           className="fixed bottom-6 right-6 bg-white rounded-lg shadow-2xl flex flex-col z-[9999] border border-gray-200 animate-slideUp"
           style={{ 
             width: `${size.width}px`, 

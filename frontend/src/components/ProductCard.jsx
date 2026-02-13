@@ -5,6 +5,9 @@ import { useToast } from '../context/ToastContext'
 import { useNavigate } from 'react-router-dom'
 
 const ProductCard = ({ product }) => {
+  if (!product || !product.product_id) {
+    return null
+  }
   const { cartItems, addToCart, updateQuantity, removeFromCart } = useCart()
   const { success, error } = useToast()
   const navigate = useNavigate()
@@ -21,15 +24,7 @@ const ProductCard = ({ product }) => {
     e.preventDefault()
     e.stopPropagation()
     
-    console.log('🎯 Add to cart clicked for:', { 
-      id: product.product_id, 
-      name: product.name, 
-      price: product.price,
-      stock: product.stock 
-    })
-    
     if (product.stock === 0) {
-      console.warn('⚠️ Product is out of stock')
       error('This product is out of stock')
       return
     }
@@ -39,7 +34,7 @@ const ProductCard = ({ product }) => {
     setIsAdding(true)
     
     try {
-      addToCart(product, 1)
+      await addToCart(product, 1)
       success(`Added ${product.name} to cart!`)
       
       // Re-enable button after 500ms
@@ -51,7 +46,7 @@ const ProductCard = ({ product }) => {
     }
   }
   
-  const handleIncreaseQuantity = (e) => {
+  const handleIncreaseQuantity = async (e) => {
     e.preventDefault()
     e.stopPropagation()
     
@@ -60,18 +55,33 @@ const ProductCard = ({ product }) => {
       return
     }
     
-    updateQuantity(product.product_id, quantityInCart + 1)
+    try {
+      await updateQuantity(product.product_id, quantityInCart + 1)
+    } catch (err) {
+      console.error('❌ Failed to update cart:', err)
+      error('Failed to update cart')
+    }
   }
   
-  const handleDecreaseQuantity = (e) => {
+  const handleDecreaseQuantity = async (e) => {
     e.preventDefault()
     e.stopPropagation()
     
     if (quantityInCart <= 1) {
-      removeFromCart(product.product_id)
-      success('Removed from cart')
+      try {
+        await removeFromCart(product.product_id)
+        success('Removed from cart')
+      } catch (err) {
+        console.error('❌ Failed to remove item:', err)
+        error('Failed to remove item')
+      }
     } else {
-      updateQuantity(product.product_id, quantityInCart - 1)
+      try {
+        await updateQuantity(product.product_id, quantityInCart - 1)
+      } catch (err) {
+        console.error('❌ Failed to update cart:', err)
+        error('Failed to update cart')
+      }
     }
   }
 

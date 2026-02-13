@@ -54,5 +54,5 @@ async def chat_with_ollama(messages: List[Dict[str, str]], model: str = "olmo:1b
             data = response.json()
             return data.get("message", {}).get("content", "").strip()
     except Exception as e:
-        print(f"Ollama chat error: {e}")
+        logger.error(f"Ollama chat error: {e}", exc_info=True)
         return None

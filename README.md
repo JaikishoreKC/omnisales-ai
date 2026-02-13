@@ -25,7 +25,8 @@ See [docs/SETUP.md](docs/SETUP.md) for the full walkthrough.
 
 ## API notes
 
-- `/chat` requires `Authorization: Bearer <API_SECRET_KEY>`.
+- Web chat uses a session ID for guests and a user token for authenticated users.
+- Non-web channels require `Authorization: Bearer <API_SECRET_KEY>`.
 - Most endpoints return a standard envelope; `/chat` returns a direct `ChatResponse`.
 - API docs are available at `http://localhost:8000/docs`.
 

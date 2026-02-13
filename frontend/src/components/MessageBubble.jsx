@@ -6,13 +6,15 @@ import { MarkdownText } from '../utils/markdown'
 const MessageBubble = ({ message }) => {
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
+  const content = message.content || message.text || ''
+  const actions = Array.isArray(message.actions) ? message.actions : []
 
   // System messages (context notifications)
   if (isSystem) {
     return (
       <div className="flex justify-center my-2">
         <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-2 rounded-full text-xs font-medium">
-          {message.content}
+          {content}
         </div>
       </div>
     )
@@ -27,22 +29,28 @@ const MessageBubble = ({ message }) => {
             : 'bg-gray-100 text-gray-900'
         }`}
       >
-        <MarkdownText text={message.content} className="text-sm whitespace-pre-wrap break-words" />
+        <MarkdownText text={content} className="text-sm whitespace-pre-wrap break-words" />
         {message.agent && (
           <p className="text-xs mt-1 opacity-70">
             Agent: {message.agent}
           </p>
         )}
-        {message.actions && message.actions.length > 0 && (
+        {actions.length > 0 && (
           <div className="mt-3 space-y-2">
-            {message.actions.map((action, index) => {
-              if (action.type === 'show_products' && action.data) {
+            {actions.map((action, index) => {
+              if (action.type === 'show_products' && Array.isArray(action.data)) {
+                const products = action.data.filter(
+                  (product) => product && product.product_id
+                )
+                if (products.length === 0) {
+                  return null
+                }
                 return (
                   <div key={index} className="space-y-2">
                     <p className="text-xs font-semibold opacity-70">Recommended Products:</p>
                     <div className="grid grid-cols-1 gap-2">
-                      {action.data.map((product, idx) => (
-                        <ProductCard key={idx} product={product} />
+                      {products.map((product) => (
+                        <ProductCard key={product.product_id} product={product} />
                       ))}
                     </div>
                   </div>

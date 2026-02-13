@@ -1,8 +1,15 @@
+import os
 import pytest
 import httpx
 from httpx import AsyncClient
-from app.main import app
 from app.orchestrator.intent import detect_intent
+
+os.environ.setdefault("API_SECRET_KEY", "test-api-key")
+os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017")
+os.environ.setdefault("DB_NAME", "omnisales_test")
+
+from app.main import app
 
 
 @pytest.mark.asyncio
@@ -56,10 +63,13 @@ async def test_chat_endpoint(monkeypatch):
     monkeypatch.setattr(db, "close_db", fake_close_db)
     monkeypatch.setattr(db, "get_database", lambda: fake_db)
 
+    from app.auth import create_access_token
+    user_token = create_access_token({"user_id": "test_user"})
+
     async with AsyncClient(app=app, base_url="http://test") as client:
         response = await client.post(
             "/chat",
-            headers={"Authorization": "Bearer test-api-key"},
+            headers={"X-User-Token": user_token},
             json={
                 "user_id": "test_user",
                 "session_id": "test_session",

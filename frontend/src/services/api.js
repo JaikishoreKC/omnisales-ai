@@ -1,7 +1,6 @@
 import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-const API_KEY = import.meta.env.VITE_API_KEY || ''
 
 class ApiError extends Error {
   constructor(message, status, data) {
@@ -19,8 +18,6 @@ const api = axios.create({
   }
 })
 
-const getApiKey = () => API_KEY?.trim()
-
 const getAuthToken = () => {
   const token = localStorage.getItem('token')
   return token ? token.trim() : ''
@@ -28,6 +25,12 @@ const getAuthToken = () => {
 
 const buildAuthHeaders = (token) =>
   token ? { Authorization: `Bearer ${token}` } : {}
+
+const buildSessionHeaders = (sessionId) =>
+  sessionId ? { 'X-Session-Id': sessionId } : {}
+
+const buildUserTokenHeaders = (token) =>
+  token ? { 'X-User-Token': token } : {}
 
 const unwrapApiResponse = (payload) => {
   if (payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'success')) {
@@ -60,36 +63,77 @@ const request = async (config) => {
   }
 }
 
+const emitAuthExpired = () => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('auth:expired'))
+  }
+}
+
 const requestWithAuth = async (config, token) => {
   const authToken = token || getAuthToken()
   if (!authToken) {
     throw new ApiError('Authentication required', 401)
   }
-  return request({
-    ...config,
-    headers: {
-      ...config.headers,
-      ...buildAuthHeaders(authToken)
+  try {
+    return await request({
+      ...config,
+      headers: {
+        ...config.headers,
+        ...buildAuthHeaders(authToken)
+      }
+    })
+  } catch (error) {
+    if (error?.status === 401) {
+      emitAuthExpired()
     }
-  })
+    throw error
+  }
 }
 
-const requestWithApiKey = async (config) => {
-  const apiKey = getApiKey()
-  if (!apiKey) {
-    throw new ApiError('Missing API key for chat', 401)
+const requestWithSession = async (config, sessionId) => {
+  if (!sessionId) {
+    throw new ApiError('session_id is required', 400)
   }
   return request({
     ...config,
     headers: {
       ...config.headers,
-      ...buildAuthHeaders(apiKey)
+      ...buildSessionHeaders(sessionId)
     }
   })
 }
 
-export const sendChatMessage = async (data) =>
-  requestWithApiKey({ method: 'post', url: '/chat', data })
+const requestWithCartContext = async (config, token, sessionId) => {
+  if (token) {
+    return requestWithAuth(config, token)
+  }
+  return requestWithSession(config, sessionId)
+}
+
+export const sendChatMessage = async (data) => {
+  const authToken = getAuthToken()
+  const sessionId = data?.session_id
+  return request({
+    method: 'post',
+    url: '/chat',
+    data,
+    headers: {
+      ...buildUserTokenHeaders(authToken),
+      ...buildSessionHeaders(sessionId)
+    }
+  })
+}
+
+export const getChatHistory = async ({ token, sessionId, limit } = {}) => {
+  const params = { session_id: sessionId }
+  if (limit) {
+    params.limit = limit
+  }
+  if (token) {
+    return requestWithAuth({ method: 'get', url: '/chat/history', params }, token)
+  }
+  return requestWithSession({ method: 'get', url: '/chat/history', params }, sessionId)
+}
 
 export const healthCheck = async () => request({ method: 'get', url: '/health' })
 
@@ -161,5 +205,20 @@ export const updateAdminProduct = async (productId, payload, token) =>
 
 export const getProfile = async (userId, token) =>
   requestWithAuth({ method: 'get', url: `/profile/${userId}` }, token)
+
+export const getCart = async ({ token, sessionId } = {}) =>
+  requestWithCartContext({ method: 'get', url: '/cart' }, token, sessionId)
+
+export const addCartItem = async (payload, { token, sessionId } = {}) =>
+  requestWithCartContext({ method: 'post', url: '/cart/add', data: payload }, token, sessionId)
+
+export const updateCartItem = async (payload, { token, sessionId } = {}) =>
+  requestWithCartContext({ method: 'patch', url: '/cart/update', data: payload }, token, sessionId)
+
+export const removeCartItem = async (productId, { token, sessionId } = {}) =>
+  requestWithCartContext({ method: 'delete', url: `/cart/remove/${productId}` }, token, sessionId)
+
+export const clearCart = async ({ token, sessionId } = {}) =>
+  requestWithCartContext({ method: 'delete', url: '/cart/clear' }, token, sessionId)
 
 export default api

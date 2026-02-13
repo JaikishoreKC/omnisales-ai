@@ -1,4 +1,5 @@
-from app.repositories.session_repository import get_last_messages, get_cart, get_session, update_summary
+from app.repositories.session_repository import get_last_messages, get_session, update_summary
+from app.repositories.cart_repository import get_cart
 from app.repositories.user_repository import get_user
 
 
@@ -15,8 +16,8 @@ async def compress_session_history(messages: list) -> str:
 
 
 async def build_context(user_id: str, session_id: str, new_message: str) -> str:
-    last_messages = await get_last_messages(session_id)
-    session = await get_session(session_id)
+    last_messages = await get_last_messages(session_id, user_id)
+    session = await get_session(session_id, user_id)
     
     # Get or create session summary
     summary = session.get("summary", "") if session else ""
@@ -25,12 +26,22 @@ async def build_context(user_id: str, session_id: str, new_message: str) -> str:
     all_messages = session.get("all_messages", []) if session else []
     if len(all_messages) > 10 and not summary:
         summary = await compress_session_history(all_messages)
-        await update_summary(session_id, summary)
-    cart_items = await get_cart(session_id)
+        await update_summary(session_id, user_id, summary)
+
+    owner_type = "user" if user_id and not user_id.startswith("guest_") else "guest"
+    owner_id = user_id if owner_type == "user" else session_id
+    cart_items = await get_cart(owner_type, owner_id)
     user = await get_user(user_id)
     preferences = user.get("preferences", {}) if user else {}
     
-    parts = ["You are an AI sales assistant for OmniSales."]
+    parts = [
+        "You are an AI sales assistant for OmniSales.",
+        "\n\n=== ACTION POLICY ===\n"
+        "- Never confirm an action unless the backend explicitly verified it.\n"
+        "- Use only provided database results for product, cart, and order details.\n"
+        "- If verification is missing, say the action is pending confirmation.\n"
+        "- Do not invent stock, pricing, cart totals, or order status.\n"
+    ]
     
     if summary:
         parts.append(f"\n\n=== SUMMARY ===\n{summary}")

@@ -29,6 +29,22 @@ def test_register_success(client, monkeypatch):
     assert data["token"] == "token123"
 
 
+def test_register_duplicate_email(client, monkeypatch):
+    from app import auth as auth_module
+
+    async def fake_get_user_by_email(email):
+        return {"user_id": "u1", "email": email}
+
+    monkeypatch.setattr(auth_module, "get_user_by_email", fake_get_user_by_email)
+
+    response = client.post(
+        "/auth/register",
+        json={"name": "Test", "email": "test@example.com", "password": "secret123"}
+    )
+
+    assert response.status_code == 400
+
+
 def test_login_success(client, monkeypatch):
     from app import auth as auth_module
 
@@ -57,6 +73,26 @@ def test_login_success(client, monkeypatch):
     assert data["token"] == "token123"
 
 
+def test_login_invalid_credentials(client, monkeypatch):
+    from app import auth as auth_module
+
+    async def fake_get_user_by_email(email):
+        return {"user_id": "u1", "email": email, "password_hash": "hash"}
+
+    def fake_verify_password(plain, hashed):
+        return False
+
+    monkeypatch.setattr(auth_module, "get_user_by_email", fake_get_user_by_email)
+    monkeypatch.setattr(auth_module, "verify_password", fake_verify_password)
+
+    response = client.post(
+        "/auth/login",
+        json={"email": "test@example.com", "password": "wrong"}
+    )
+
+    assert response.status_code == 401
+
+
 def test_change_password_success(client, monkeypatch):
     from app import auth as auth_module
 
@@ -79,6 +115,44 @@ def test_change_password_success(client, monkeypatch):
     data = response.json()
     assert data["success"] is True
     assert "Password changed" in data["message"]
+
+
+def test_change_password_invalid_token(client, monkeypatch):
+    from app import auth as auth_module
+
+    def fake_decode_token(token):
+        return None
+
+    monkeypatch.setattr(auth_module, "decode_token", fake_decode_token)
+
+    response = client.post(
+        "/auth/change-password",
+        headers={"Authorization": "Bearer token123"},
+        json={"old_password": "oldpass", "new_password": "newpass123"}
+    )
+
+    assert response.status_code == 401
+
+
+def test_change_password_incorrect_old_password(client, monkeypatch):
+    from app import auth as auth_module
+
+    def fake_decode_token(token):
+        return {"user_id": "u1"}
+
+    async def fake_change_password(user_id, old_password, new_password):
+        return False
+
+    monkeypatch.setattr(auth_module, "decode_token", fake_decode_token)
+    monkeypatch.setattr(auth_module, "change_password", fake_change_password)
+
+    response = client.post(
+        "/auth/change-password",
+        headers={"Authorization": "Bearer token123"},
+        json={"old_password": "oldpass", "new_password": "newpass123"}
+    )
+
+    assert response.status_code == 400
 
 
 def test_request_reset_token_dev_only(client, monkeypatch):

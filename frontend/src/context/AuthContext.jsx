@@ -1,5 +1,8 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react'
 import PropTypes from 'prop-types'
+import useChatStore from '../store/chatStore'
+import { getChatHistory } from '../services/api'
+import { getChatSessionId, getGuestSessionId } from '../utils/session'
 
 const AuthContext = createContext(null)
 
@@ -15,6 +18,15 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [token, setToken] = useState(null)
   const [loading, setLoading] = useState(true)
+  const wasAuthenticated = useRef(false)
+
+  const clearAuth = (reason = 'unknown') => {
+    console.warn('[auth] Clearing auth state:', reason)
+    setUser(null)
+    setToken(null)
+    localStorage.removeItem('user')
+    localStorage.removeItem('token')
+  }
 
   useEffect(() => {
     // Load user from localStorage on mount
@@ -33,6 +45,48 @@ export const AuthProvider = ({ children }) => {
     }
     setLoading(false)
   }, [])
+
+  useEffect(() => {
+    let isActive = true
+
+    const syncChat = async () => {
+      const chatStore = useChatStore.getState()
+
+      if (user && token) {
+        const sessionId = getChatSessionId(user)
+        chatStore.setSessionId(sessionId)
+        chatStore.setOwnerKey(`user:${user.user_id}`)
+        chatStore.clearMessages('auth-login')
+        try {
+          const data = await getChatHistory({ token, sessionId, limit: 200 })
+          if (isActive) {
+            chatStore.setMessages(data?.messages || [], { force: true, source: 'auth-login' })
+          }
+        } catch (error) {
+          if (error?.status === 401) {
+            clearAuth('chat-history-unauthorized')
+          } else {
+            console.error('Failed to load chat history:', error)
+          }
+        }
+      } else if (wasAuthenticated.current) {
+        chatStore.clearMessages('auth-logout')
+        const guestSessionId = getGuestSessionId()
+        chatStore.setSessionId(guestSessionId)
+        chatStore.setOwnerKey(`guest:${guestSessionId}`)
+        if (typeof chatStore.persist?.rehydrate === 'function') {
+          await chatStore.persist.rehydrate()
+        }
+      }
+    }
+
+    syncChat()
+    wasAuthenticated.current = !!user && !!token
+
+    return () => {
+      isActive = false
+    }
+  }, [user, token])
 
   useEffect(() => {
     const handleStorage = (event) => {
@@ -61,6 +115,12 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
 
+  useEffect(() => {
+    const handleAuthExpired = () => clearAuth('auth-expired-event')
+    window.addEventListener('auth:expired', handleAuthExpired)
+    return () => window.removeEventListener('auth:expired', handleAuthExpired)
+  }, [])
+
   const login = (userData, authToken) => {
     setUser(userData)
     setToken(authToken)
@@ -69,10 +129,7 @@ export const AuthProvider = ({ children }) => {
   }
 
   const logout = () => {
-    setUser(null)
-    setToken(null)
-    localStorage.removeItem('user')
-    localStorage.removeItem('token')
+    clearAuth('user-logout')
     localStorage.removeItem('cart')
   }
 

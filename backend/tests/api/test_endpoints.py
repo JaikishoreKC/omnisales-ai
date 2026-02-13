@@ -52,40 +52,45 @@ class TestChatEndpoint:
     def test_chat_requires_auth(self, client, chat_payload, mock_chat_dependencies):
         """Test chat endpoint requires authentication"""
         response = client.post("/chat", json=chat_payload)
-        assert response.status_code == 403  # FastAPI returns 403 for missing auth
+        assert response.status_code == 401
     
     def test_chat_with_invalid_api_key(self, client, chat_payload, mock_chat_dependencies):
         """Test chat rejects invalid API key"""
         response = client.post(
             "/chat",
-            headers={"Authorization": "Bearer invalid-key"},
-            json=chat_payload
+            headers={"Authorization": "Bearer invalid-key", "X-Session-Id": "s1"},
+            json={
+                **chat_payload,
+                "user_id": "guest_s1",
+                "session_id": "s1",
+                "channel": "whatsapp"
+            }
         )
         assert response.status_code == 401
         assert "Invalid API key" in response.json()["error"]
     
-    def test_chat_with_valid_auth(self, client, auth_headers, chat_payload, mock_chat_dependencies):
+    def test_chat_with_valid_auth(self, client, user_token_headers, chat_payload, mock_chat_dependencies):
         """Test chat accepts valid authentication"""
-        response = client.post("/chat", headers=auth_headers, json=chat_payload)
+        response = client.post("/chat", headers=user_token_headers, json=chat_payload)
         # May return 200 or timeout, but shouldn't be 401/403
         assert response.status_code != 401
         assert response.status_code != 403
     
-    def test_chat_validates_required_fields(self, client, auth_headers, mock_chat_dependencies):
+    def test_chat_validates_required_fields(self, client, user_token_headers, mock_chat_dependencies):
         """Test chat validates required fields"""
         # Missing message field
         response = client.post(
             "/chat",
-            headers=auth_headers,
+            headers=user_token_headers,
             json={"user_id": "test", "session_id": "test"}
         )
         assert response.status_code == 422
     
-    def test_chat_validates_user_id_format(self, client, auth_headers, mock_chat_dependencies):
+    def test_chat_validates_user_id_format(self, client, user_token_headers, mock_chat_dependencies):
         """Test chat validates user_id format"""
         response = client.post(
             "/chat",
-            headers=auth_headers,
+            headers=user_token_headers,
             json={
                 "user_id": "invalid user!@#",
                 "session_id": "test_session",
@@ -94,12 +99,12 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_validates_message_length(self, client, auth_headers, mock_chat_dependencies):
+    def test_chat_validates_message_length(self, client, user_token_headers, mock_chat_dependencies):
         """Test chat rejects messages over 5000 chars"""
         long_message = "a" * 5001
         response = client.post(
             "/chat",
-            headers=auth_headers,
+            headers=user_token_headers,
             json={
                 "user_id": "test_user",
                 "session_id": "test_session",
@@ -108,11 +113,11 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_validates_channel(self, client, auth_headers, mock_chat_dependencies):
+    def test_chat_validates_channel(self, client, user_token_headers, mock_chat_dependencies):
         """Test chat validates channel field"""
         response = client.post(
             "/chat",
-            headers=auth_headers,
+            headers=user_token_headers,
             json={
                 "user_id": "test_user",
                 "session_id": "test_session",
@@ -122,13 +127,13 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_accepts_valid_channels(self, client, auth_headers, mock_chat_dependencies):
+    def test_chat_accepts_valid_channels(self, client, user_token_headers, mock_chat_dependencies):
         """Test chat accepts valid channel values"""
         valid_channels = ["web", "whatsapp", "voice"]
         for channel in valid_channels:
             response = client.post(
                 "/chat",
-                headers=auth_headers,
+                headers=user_token_headers,
                 json={
                     "user_id": "test_user",
                     "session_id": f"test_session_{channel}",
@@ -139,11 +144,11 @@ class TestChatEndpoint:
             # Should not be validation error
             assert response.status_code != 422
     
-    def test_chat_rejects_empty_message(self, client, auth_headers, mock_chat_dependencies):
+    def test_chat_rejects_empty_message(self, client, user_token_headers, mock_chat_dependencies):
         """Test chat rejects empty messages"""
         response = client.post(
             "/chat",
-            headers=auth_headers,
+            headers=user_token_headers,
             json={
                 "user_id": "test_user",
                 "session_id": "test_session",
@@ -152,11 +157,11 @@ class TestChatEndpoint:
         )
         assert response.status_code == 422
     
-    def test_chat_rejects_whitespace_only_message(self, client, auth_headers, mock_chat_dependencies):
+    def test_chat_rejects_whitespace_only_message(self, client, user_token_headers, mock_chat_dependencies):
         """Test chat rejects whitespace-only messages"""
         response = client.post(
             "/chat",
-            headers=auth_headers,
+            headers=user_token_headers,
             json={
                 "user_id": "test_user",
                 "session_id": "test_session",
@@ -225,7 +230,7 @@ class TestSuperUWebhook:
                 # Missing other required fields
             }
         )
-        assert response.status_code == 422  # Pydantic validation error
+        assert response.status_code == 400
     
     def test_superu_webhook_validates_field_types(self, client):
         """Test SuperU webhook validates field types"""
@@ -238,7 +243,7 @@ class TestSuperUWebhook:
                 "status": "completed"
             }
         )
-        assert response.status_code == 422
+        assert response.status_code == 400
 
 
 class TestSecurityHeaders:
@@ -291,11 +296,11 @@ class TestErrorHandling:
         response = client.get("/chat")  # Should be POST
         assert response.status_code == 405
     
-    def test_422_for_invalid_json(self, client, auth_headers):
+    def test_422_for_invalid_json(self, client, user_token_headers):
         """Test 422 for malformed request body"""
         response = client.post(
             "/chat",
-            headers=auth_headers,
+            headers=user_token_headers,
             data="invalid json"
         )
         assert response.status_code == 422

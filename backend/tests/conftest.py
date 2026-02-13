@@ -7,6 +7,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+os.environ.setdefault("API_SECRET_KEY", "test-api-key")
+os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017")
+os.environ.setdefault("DB_NAME", "omnisales_test")
+os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test_token")
+
 
 class FakeCollection:
     async def create_index(self, *args, **kwargs):
@@ -56,6 +62,7 @@ def client(monkeypatch):
     os.environ.setdefault("SECRET_KEY", "test-secret")
     os.environ.setdefault("MONGO_URI", "mongodb://localhost:27017")
     os.environ.setdefault("DB_NAME", "omnisales_test")
+    os.environ.setdefault("WHATSAPP_VERIFY_TOKEN", "test_token")
 
     from app import core
     from app.core import database as db
@@ -89,6 +96,23 @@ def auth_headers(api_key):
     """Authentication headers with valid API key"""
     return {
         "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+
+@pytest.fixture
+def user_token(test_user):
+    """JWT token for authenticated user flows"""
+    from app.auth import create_access_token
+
+    return create_access_token({"user_id": test_user["user_id"]})
+
+
+@pytest.fixture
+def user_token_headers(user_token):
+    """Headers for authenticated web chat requests"""
+    return {
+        "X-User-Token": user_token,
         "Content-Type": "application/json"
     }
 

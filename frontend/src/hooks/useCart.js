@@ -1,150 +1,122 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { getGuestSessionId } from '../utils/session'
+import { clearCart as clearCartApi } from '../services/api'
+import useCartStore from '../store/cartStore'
 
-const CART_STORAGE_KEY = 'cart'
+const CART_UPDATED_KEY = 'omnisales-cart-updated'
 
 export const useCart = () => {
-  const [cartItems, setCartItems] = useState(() => {
-    // Initialize state from localStorage
-    const savedCart = localStorage.getItem(CART_STORAGE_KEY)
-    if (savedCart) {
-      try {
-        return JSON.parse(savedCart)
-      } catch (error) {
-        console.error('Failed to load cart:', error)
-        localStorage.removeItem(CART_STORAGE_KEY)
-        return []
-      }
-    }
-    return []
-  })
+  const { isAuthenticated, token } = useAuth()
+  const guestSessionId = getGuestSessionId()
+  const contextRef = useRef('')
+  const {
+    cartItems,
+    setOwnerKey,
+    loadCart,
+    addToCart: storeAddToCart,
+    removeFromCart: storeRemoveFromCart,
+    updateQuantity: storeUpdateQuantity,
+    clearCart: storeClearCart,
+    getCartTotal,
+    getCartCount
+  } = useCartStore()
 
-  // Listen for cart changes from other components/tabs
+  const getContextKey = useCallback(() => {
+    if (isAuthenticated) {
+      return `user:${token || 'unknown'}`
+    }
+    return `guest:${guestSessionId}`
+  }, [isAuthenticated, token, guestSessionId])
+
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === CART_STORAGE_KEY) {
-        console.log('🔄 Cart updated from storage event')
-        if (e.newValue) {
-          try {
-            const newCart = JSON.parse(e.newValue)
-            // Only update if cart actually changed
-            setCartItems(prev => {
-              if (JSON.stringify(prev) === JSON.stringify(newCart)) {
-                return prev // No change, return same reference to prevent re-render
-              }
-              return newCart
-            })
-          } catch (error) {
-            console.error('Failed to parse cart from storage event:', error)
-          }
-        } else {
-          setCartItems([])
-        }
-      }
+    contextRef.current = getContextKey()
+    setOwnerKey(contextRef.current)
+  }, [getContextKey])
+
+  const refreshCart = useCallback(async () => {
+    const contextKey = getContextKey()
+    if (contextRef.current !== contextKey) {
+      return
     }
+    await loadCart(isAuthenticated ? { token } : { sessionId: guestSessionId })
+  }, [isAuthenticated, token, guestSessionId, getContextKey, loadCart])
 
-    // Listen for storage events (changes from other tabs)
-    window.addEventListener('storage', handleStorageChange)
-
-    // Custom event for same-window updates
-    const handleCustomCartUpdate = () => {
-      console.log('🔄 Cart updated from custom event')
-      const savedCart = localStorage.getItem(CART_STORAGE_KEY)
-      if (savedCart) {
-        try {
-          const newCart = JSON.parse(savedCart)
-          // Only update if cart actually changed (prevent infinite loop)
-          setCartItems(prev => {
-            if (JSON.stringify(prev) === JSON.stringify(newCart)) {
-              return prev // No change, return same reference to prevent re-render
-            }
-            return newCart
-          })
-        } catch (error) {
-          console.error('Failed to parse cart:', error)
-        }
-      } else {
-        setCartItems(prev => prev.length === 0 ? prev : [])
-      }
-    }
-
-    window.addEventListener('cartUpdated', handleCustomCartUpdate)
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener('cartUpdated', handleCustomCartUpdate)
+  const emitCartUpdated = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cart:updated'))
     }
   }, [])
 
-  // Save cart to localStorage whenever it changes
   useEffect(() => {
-    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems))
-    // Dispatch custom event to notify other useCart instances in the same window
-    window.dispatchEvent(new CustomEvent('cartUpdated', { detail: cartItems }))
-  }, [cartItems])
+    let isActive = true
 
-  const addToCart = (product, quantity = 1) => {
-    console.log('🛒 Adding to cart:', { product, quantity })
-    
-    setCartItems(prevItems => {
-      const existingItem = prevItems.find(item => item.product_id === product.product_id)
-      
-      if (existingItem) {
-        console.log('📦 Item already in cart, updating quantity')
-        const updatedItems = prevItems.map(item =>
-          item.product_id === product.product_id
-            ? { ...item, quantity: Math.min(item.quantity + quantity, product.stock) }
-            : item
-        )
-        console.log('✅ Cart updated:', updatedItems)
-        return updatedItems
+    const syncCart = async () => {
+      try {
+        const contextKey = getContextKey()
+        if (isAuthenticated) {
+          await clearCartApi({ sessionId: guestSessionId })
+          if (isActive && contextRef.current === contextKey) {
+            await refreshCart()
+          }
+        } else if (isActive && contextRef.current === contextKey) {
+          await refreshCart()
+        }
+      } catch (error) {
+        console.error('Failed to sync cart:', error)
       }
-      
-      console.log('🆕 Adding new item to cart')
-      const newItems = [...prevItems, { ...product, quantity }]
-      console.log('✅ Cart updated:', newItems)
-      return newItems
-    })
-  }
+    }
 
-  const removeFromCart = (productId) => {
-    console.log('🗑️ Removing from cart:', productId)
-    setCartItems(prevItems => {
-      const newItems = prevItems.filter(item => item.product_id !== productId)
-      console.log('✅ Cart after removal:', newItems)
-      return newItems
-    })
-  }
+    syncCart()
 
-  const updateQuantity = (productId, newQuantity) => {
-    console.log('🔄 Updating quantity:', { productId, newQuantity })
-    
-    if (newQuantity < 1) {
-      removeFromCart(productId)
+    return () => {
+      isActive = false
+    }
+  }, [isAuthenticated, token, guestSessionId, refreshCart])
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.key === CART_UPDATED_KEY) {
+        refreshCart().catch((error) => {
+          console.error('Failed to refresh cart:', error)
+        })
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [refreshCart])
+
+  const addToCart = async (product, quantity = 1) => {
+    const contextKey = getContextKey()
+    if (contextRef.current !== contextKey) {
       return
     }
-    
-    setCartItems(prevItems => {
-      const newItems = prevItems.map(item =>
-        item.product_id === productId
-          ? { ...item, quantity: Math.min(newQuantity, item.stock) }
-          : item
-      )
-      console.log('✅ Cart after quantity update:', newItems)
-      return newItems
-    })
+    await storeAddToCart(product, quantity, isAuthenticated ? { token } : { sessionId: guestSessionId })
   }
 
-  const clearCart = () => {
-    setCartItems([])
-    localStorage.removeItem(CART_STORAGE_KEY)
+  const removeFromCart = async (productId) => {
+    const contextKey = getContextKey()
+    if (contextRef.current !== contextKey) {
+      return
+    }
+    await storeRemoveFromCart(productId, isAuthenticated ? { token } : { sessionId: guestSessionId })
   }
 
-  const getCartTotal = () => {
-    return cartItems.reduce((total, item) => total + item.price * item.quantity, 0)
+  const updateQuantity = async (productId, newQuantity) => {
+    const contextKey = getContextKey()
+    if (contextRef.current !== contextKey) {
+      return
+    }
+    await storeUpdateQuantity(productId, newQuantity, isAuthenticated ? { token } : { sessionId: guestSessionId })
   }
 
-  const getCartCount = () => {
-    return cartItems.reduce((count, item) => count + item.quantity, 0)
+  const clearCart = async () => {
+    const contextKey = getContextKey()
+    if (contextRef.current !== contextKey) {
+      return
+    }
+    await storeClearCart(isAuthenticated ? { token } : { sessionId: guestSessionId })
   }
 
   return {

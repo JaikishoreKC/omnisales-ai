@@ -11,6 +11,8 @@ const OrdersPage = () => {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    let isActive = true
+
     if (!isAuthenticated) {
       navigate('/login')
       return
@@ -19,15 +21,22 @@ const OrdersPage = () => {
     const fetchOrders = async () => {
       try {
         const data = await getOrders(token)
+        if (!isActive) return
         setOrders(data.orders || [])
       } catch (err) {
+        if (!isActive) return
         setError(err.message || 'Failed to load orders')
       } finally {
-        setLoading(false)
+        if (isActive) {
+          setLoading(false)
+        }
       }
     }
 
     fetchOrders()
+    return () => {
+      isActive = false
+    }
   }, [isAuthenticated, token, navigate])
 
   const getStatusColor = (status) => {

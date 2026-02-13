@@ -5,31 +5,42 @@ import { getOrderById } from '../services/api'
 
 const OrderDetailPage = () => {
   const { orderId } = useParams()
-  const { token, isAdmin } = useAuth()
+  const { token } = useAuth()
   const navigate = useNavigate()
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    let isActive = true
+
     if (!token) {
       navigate('/login')
       return
     }
-    fetchOrderDetails()
+    fetchOrderDetails(isActive)
+    return () => {
+      isActive = false
+    }
   }, [orderId, token, navigate])
 
-  const fetchOrderDetails = async () => {
+  const fetchOrderDetails = async (isActive) => {
     setLoading(true)
     setError(null)
     try {
       const data = await getOrderById(orderId, token)
-      setOrder(data)
+      if (isActive) {
+        setOrder(data)
+      }
     } catch (err) {
       console.error('Failed to fetch order details:', err)
-      setError(err.message || 'Failed to load order details')
+      if (isActive) {
+        setError(err.message || 'Failed to load order details')
+      }
     } finally {
-      setLoading(false)
+      if (isActive) {
+        setLoading(false)
+      }
     }
   }
 

@@ -26,16 +26,19 @@ def detect_intent(message: str) -> str:
         return "loyalty"
     
     # Cart operations (must check before general keywords)
-    if ("add" in message_lower or "put" in message_lower or "i want" in message_lower or "i'll take" in message_lower or "get me" in message_lower) and ("cart" in message_lower or "too" in message_lower or "also" in message_lower):
+    cart_keywords = INTENT_KEYWORDS["cart"]
+    if any(kw in message_lower for kw in cart_keywords):
+        return "cart"
+
+    if "i want" in message_lower and any(term in message_lower for term in ["too", "also", "another", "as well"]):
+        return "cart"
+
+    if "add " in message_lower and any(term in message_lower for term in ["too", "also", "another", "as well"]):
         return "cart"
     
-    if "view cart" in message_lower or "my cart" in message_lower or "show cart" in message_lower:
-        return "cart"
-    
-    if "remove" in message_lower and "cart" in message_lower:
-        return "cart"
-    
-    if "clear cart" in message_lower or "empty cart" in message_lower:
+    if any(term in message_lower for term in ["cart", "basket"]) and any(
+        verb in message_lower for verb in ["add", "put", "remove", "delete", "clear", "empty"]
+    ):
         return "cart"
     
     # Check other intents

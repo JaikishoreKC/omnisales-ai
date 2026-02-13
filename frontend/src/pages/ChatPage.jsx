@@ -1,22 +1,47 @@
 import React, { useState, useRef, useEffect } from 'react'
 import MessageBubble from '../components/MessageBubble'
-import { sendChatMessage } from '../services/api'
 import useChatStore from '../store/chatStore'
+import { shallow } from 'zustand/shallow'
 import { useConfirm } from '../context/ConfirmContext'
+import { useAuth } from '../context/AuthContext'
+import { getChatSessionId } from '../utils/session'
+import { sendChatWithStore } from '../utils/chatFlow'
 
 const ChatPage = () => {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef(null)
   const { confirm } = useConfirm()
+  const { user } = useAuth()
 
   // Use Zustand store instead of local state
-  const messages = useChatStore((state) => state.messages)
-  const isLoading = useChatStore((state) => state.isLoading)
-  const sessionId = useChatStore((state) => state.sessionId)
-  const addMessage = useChatStore((state) => state.addMessage)
-  const setLoading = useChatStore((state) => state.setLoading)
-  const getSessionId = useChatStore((state) => state.getSessionId)
-  const clearMessages = useChatStore((state) => state.clearMessages)
+  const {
+    messages,
+    isLoading,
+    sessionId,
+    ownerKey,
+    addMessage,
+    startRequest,
+    finishRequest,
+    getSessionId,
+    clearMessages,
+    setSessionId,
+    setMessages
+  } = useChatStore(
+    (state) => ({
+      messages: state.messages,
+      isLoading: state.isLoading,
+      sessionId: state.sessionId,
+      ownerKey: state.ownerKey,
+      addMessage: state.addMessage,
+      startRequest: state.startRequest,
+      finishRequest: state.finishRequest,
+      getSessionId: state.getSessionId,
+      clearMessages: state.clearMessages,
+      setSessionId: state.setSessionId,
+      setMessages: state.setMessages
+    }),
+    shallow
+  )
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -25,6 +50,10 @@ const ChatPage = () => {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    setSessionId(getChatSessionId(user))
+  }, [user, setSessionId])
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return
@@ -37,44 +66,18 @@ const ChatPage = () => {
 
     addMessage(userMessage)
     setInput('')
-    setLoading(true)
-
-    try {
-      const sessionId = getSessionId()
-      
-      const response = await sendChatMessage({
-        user_id: 'user_' + Math.random().toString(36).substr(2, 9),
-        session_id: sessionId,
-        message: input,
-        channel: 'web'
-      })
-
-      const assistantMessage = {
-        role: 'assistant',
-        content: response.reply,
-        agent: response.agent_used,
-        actions: response.actions,
-        source: 'chat-page'
-      }
-
-      addMessage(assistantMessage)
-    } catch (error) {
-      console.error('Error:', error)
-      const status = error?.status
-      const friendlyMessage = status === 429
-        ? 'We are getting a lot of requests. Please wait a moment and try again.'
-        : status === 401
-        ? 'Chat is unavailable. Missing or invalid API key.'
-        : 'Sorry, something went wrong. Please try again.'
-      const errorMessage = {
-        role: 'assistant',
-        content: friendlyMessage,
-        source: 'chat-page'
-      }
-      addMessage(errorMessage)
-    } finally {
-      setLoading(false)
-    }
+    await sendChatWithStore({
+      message: input,
+      user,
+      source: 'chat-page',
+      getSessionId,
+      ownerKey,
+      startRequest,
+      finishRequest,
+      addMessage,
+      getStoreState: useChatStore.getState,
+      setMessages
+    })
   }
 
   const handleKeyPress = (e) => {

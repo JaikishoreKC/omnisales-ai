@@ -69,13 +69,13 @@ Optional: create [frontend/.env](frontend/.env) with:
 
 ```dotenv
 VITE_API_BASE_URL=http://localhost:8000
-VITE_API_KEY=your_api_key_here
 ```
 
 ## Verify
 
 - Health: `GET /health`
-- Chat: `POST /chat` with `Authorization: Bearer <API_SECRET_KEY>`
+- Chat (web): `POST /chat` with `X-Session-Id` for guests or `X-User-Token` for authenticated users
+- Chat (non-web): `POST /chat` with `Authorization: Bearer <API_SECRET_KEY>`
 
 Example:
 
@@ -85,9 +85,9 @@ curl http://localhost:8000/health
 
 ```bash
 curl -X POST http://localhost:8000/chat \
-  -H "Authorization: Bearer YOUR_API_SECRET_KEY" \
+  -H "X-Session-Id: session_1" \
   -H "Content-Type: application/json" \
-  -d '{"user_id":"user_1","session_id":"session_1","message":"Show me laptops"}'
+  -d '{"user_id":"guest_session_1","session_id":"session_1","message":"Show me laptops"}'
 ```
 
 ## Troubleshooting

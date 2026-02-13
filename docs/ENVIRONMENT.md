@@ -17,7 +17,7 @@ cp .env.example .env
 | `OPENROUTER_MODEL` | no | `openrouter/auto` | OpenRouter model name. |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter base URL. |
 | `OLLAMA_API_URL` | no | `http://localhost:11434` | Ollama base URL (fallback LLM). |
-| `API_SECRET_KEY` | yes | empty | Bearer token for `/chat`. |
+| `API_SECRET_KEY` | yes | empty | Bearer token for non-web `/chat` usage. |
 | `SECRET_KEY` | yes | empty | JWT signing key for auth flows. If empty, `API_SECRET_KEY` is used. |
 | `FRONTEND_URL` | no | `http://localhost:5173` | Allowed CORS origin. |
 | `ENVIRONMENT` | no | `development` | `development` or `production`. |

@@ -5,28 +5,26 @@ import { useAuth } from '../context/AuthContext'
 import { useConfirm } from '../context/ConfirmContext'
 import { useToast } from '../context/ToastContext'
 import useChatStore from '../store/chatStore'
-import { sendChatMessage } from '../services/api'
+import { sendChatWithStore } from '../utils/chatFlow'
 
 const CartPage = () => {
   const navigate = useNavigate()
   const { cartItems, updateQuantity, removeFromCart, getCartTotal } = useCart()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, user } = useAuth()
   const { confirm } = useConfirm()
-  const { success } = useToast()
+  const { success, error } = useToast()
   const [isSendingToAI, setIsSendingToAI] = useState(false)
   
   // Chat store for AI assistant
   const openAssistant = useChatStore((state) => state.openAssistant)
   const addMessage = useChatStore((state) => state.addMessage)
-  const setLoadingChat = useChatStore((state) => state.setLoading)
+  const startRequest = useChatStore((state) => state.startRequest)
+  const finishRequest = useChatStore((state) => state.finishRequest)
+  const setMessages = useChatStore((state) => state.setMessages)
   const getSessionId = useChatStore((state) => state.getSessionId)
 
-  // Debug: Log cart items
-  console.log('🛒 CartPage - cartItems:', cartItems)
-  console.log('🛒 CartPage - cartItems.length:', cartItems.length)
-
   const subtotal = getCartTotal()
-  const shipping = subtotal > 0 ? 0 : 0 // Free shipping
+  const shipping = 0 // Free shipping
   const tax = subtotal * 0.08 // 8% tax
   const total = subtotal + shipping + tax
 
@@ -48,8 +46,13 @@ const CartPage = () => {
     })
     
     if (confirmed) {
-      removeFromCart(productId)
-      success('Item removed from cart')
+      try {
+        await removeFromCart(productId)
+        success('Item removed from cart')
+      } catch (err) {
+        console.error('Failed to remove item:', err)
+        error('Failed to remove item')
+      }
     }
   }
 
@@ -89,8 +92,6 @@ Please help me with:
 - Ways to save or bundle deals
 - Any concerns about my cart`
 
-    console.log('🛒 Opening AI assistant with cart context')
-    
     // Open assistant immediately
     openAssistant()
     
@@ -108,40 +109,19 @@ Please help me with:
       source: 'cart-page'
     })
     
-    // Send to backend
-    setLoadingChat(true)
     try {
-      const sessionId = getSessionId()
-      const response = await sendChatMessage({
-        user_id: 'user_' + Math.random().toString(36).substr(2, 9),
-        session_id: sessionId,
+      await sendChatWithStore({
         message: contextMessage,
-        channel: 'web'
-      })
-
-      // Add assistant response
-      addMessage({
-        role: 'assistant',
-        content: response.reply,
-        agent: response.agent_used,
-        actions: response.actions,
-        source: 'cart-page'
-      })
-    } catch (error) {
-      console.error('Error sending cart context:', error)
-      const status = error?.status
-      const fallbackMessage = status === 429
-        ? 'We are getting a lot of requests. Please try again shortly.'
-        : status === 401
-        ? 'Chat is unavailable. Missing or invalid API key.'
-        : 'I can see your cart contents. How can I help you with your purchase decision?'
-      addMessage({
-        role: 'assistant',
-        content: fallbackMessage,
-        source: 'cart-page'
+        user,
+        source: 'cart-page',
+        getSessionId,
+        startRequest,
+        finishRequest,
+        addMessage,
+        getStoreState: useChatStore.getState,
+        setMessages
       })
     } finally {
-      setLoadingChat(false)
       setIsSendingToAI(false)
     }
   }
@@ -198,7 +178,14 @@ Please help me with:
                     {/* Quantity Controls */}
                     <div className="flex items-center space-x-3">
                       <button
-                        onClick={() => updateQuantity(item.product_id, item.quantity - 1)}
+                        onClick={async () => {
+                          try {
+                            await updateQuantity(item.product_id, item.quantity - 1)
+                          } catch (err) {
+                            console.error('Failed to update quantity:', err)
+                            error('Failed to update quantity')
+                          }
+                        }}
                         className="w-8 h-8 border border-gray-300 rounded hover:bg-gray-100"
                       >
                         −
@@ -207,7 +194,14 @@ Please help me with:
                         {item.quantity}
                       </span>
                       <button
-                        onClick={() => updateQuantity(item.product_id, item.quantity + 1)}
+                        onClick={async () => {
+                          try {
+                            await updateQuantity(item.product_id, item.quantity + 1)
+                          } catch (err) {
+                            console.error('Failed to update quantity:', err)
+                            error('Failed to update quantity')
+                          }
+                        }}
                         className="w-8 h-8 border border-gray-300 rounded hover:bg-gray-100"
                       >
                         +

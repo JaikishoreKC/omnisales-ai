@@ -13,9 +13,9 @@ const ProductsPage = () => {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const openAssistant = useChatStore((state) => state.openAssistant)
   const pageSize = 20
   const maxPageButtons = 5
+  const openAssistant = useChatStore((state) => state.openAssistant)
 
   const categories = [
     { id: 'all', name: 'All Products', icon: '🛍️' },
@@ -40,6 +40,8 @@ const ProductsPage = () => {
   }, [selectedCategory, searchQuery])
 
   useEffect(() => {
+    let isActive = true
+
     const fetchProducts = async () => {
       setLoading(true)
       setError(null)
@@ -58,18 +60,25 @@ const ProductsPage = () => {
         }
         
         const data = await getProducts(params)
+        if (!isActive) return
         setProducts(data.products || [])
         setTotalPages(data.pages || 1)
         setTotalCount(data.total || 0)
       } catch (err) {
+        if (!isActive) return
         console.error('Error fetching products:', err)
         setError('Failed to load products. Please try again.')
       } finally {
-        setLoading(false)
+        if (isActive) {
+          setLoading(false)
+        }
       }
     }
 
     fetchProducts()
+    return () => {
+      isActive = false
+    }
   }, [selectedCategory, searchQuery, page])
 
   return (

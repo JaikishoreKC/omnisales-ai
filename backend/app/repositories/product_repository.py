@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional
+import re
 from app.core.database import get_database
 
 
@@ -24,7 +25,7 @@ async def find_product_by_name(product_name: str) -> Optional[Dict[str, Any]]:
     keywords = product_name.split()
     if len(keywords) > 1:
         # Build regex pattern: (?=.*adidas)(?=.*shirt) - positive lookahead for each keyword
-        pattern = "".join([f"(?=.*{kw})" for kw in keywords])
+        pattern = "".join([f"(?=.*{re.escape(kw)})" for kw in keywords])
         keyword_match = await db.products.find_one({"name": {"$regex": pattern, "$options": "i"}})
         if keyword_match:
             return keyword_match

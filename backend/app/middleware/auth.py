@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def verify_api_key(
@@ -65,6 +65,13 @@ async def verify_webhook_signature(
     Returns:
         True if valid, raises HTTPException if invalid
     """
+    if not expected_token:
+        logger.error("Webhook signature secret is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook auth misconfiguration"
+        )
+
     signature = request.headers.get(header_name)
     
     if not signature:
@@ -77,7 +84,7 @@ async def verify_webhook_signature(
     # For WhatsApp, Meta sends signatures
     # For SuperU, implement their signature verification
     # Simple token check for now
-    if signature != expected_token:
+    if not secrets.compare_digest(signature, expected_token):
         logger.warning(f"Invalid webhook signature")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

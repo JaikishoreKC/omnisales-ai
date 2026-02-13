@@ -4,13 +4,15 @@ import { getProductById } from '../services/api'
 import { useCart } from '../hooks/useCart'
 import { useToast } from '../context/ToastContext'
 import useChatStore from '../store/chatStore'
-import { sendChatMessage } from '../services/api'
+import { sendChatWithStore } from '../utils/chatFlow'
+import { useAuth } from '../context/AuthContext'
 
 const ProductDetailPage = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const { cartItems, addToCart, updateQuantity } = useCart()
   const { success } = useToast()
+  const { user } = useAuth()
   const [product, setProduct] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -20,7 +22,9 @@ const ProductDetailPage = () => {
   // Chat store for AI assistant
   const openAssistant = useChatStore((state) => state.openAssistant)
   const addMessage = useChatStore((state) => state.addMessage)
-  const setLoadingChat = useChatStore((state) => state.setLoading)
+  const startRequest = useChatStore((state) => state.startRequest)
+  const finishRequest = useChatStore((state) => state.finishRequest)
+  const setMessages = useChatStore((state) => state.setMessages)
   const getSessionId = useChatStore((state) => state.getSessionId)
   
   // Check if product is already in cart
@@ -32,57 +36,73 @@ const ProductDetailPage = () => {
   // Sync quantity with cart when product is loaded
   useEffect(() => {
     if (cartItem) {
-      console.log('📦 Product found in cart, syncing quantity:', cartItem.quantity)
       setQuantity(cartItem.quantity)
     } else {
-      console.log('🆕 Product not in cart, resetting quantity to 1')
       setQuantity(1)
     }
   }, [cartItem])
 
   useEffect(() => {
+    let isActive = true
+
     const fetchProduct = async () => {
-      console.log('🔍 Fetching product with ID:', id)
       setLoading(true)
       setError(null)
       setProduct(null) // Clear previous product
       try {
         const data = await getProductById(id)
-        console.log('✅ Product loaded:', data)
-        setProduct(data)
+        if (isActive) {
+          setProduct(data)
+        }
       } catch (err) {
         console.error('❌ Error fetching product:', err)
-        setError('Product not found')
+        if (isActive) {
+          setError('Product not found')
+        }
       } finally {
-        setLoading(false)
+        if (isActive) {
+          setLoading(false)
+        }
       }
     }
 
     if (id) {
       fetchProduct()
     }
+
+    return () => {
+      isActive = false
+    }
   }, [id])
 
-  const handleAddToCart = () => {
-    if (cartItem) {
-      // Update existing cart item
-      updateQuantity(product.product_id, quantity)
-      success(`Updated ${product.name} quantity to ${quantity}!`)
-    } else {
-      // Add new item to cart
-      addToCart(product, quantity)
-      success(`Added ${quantity} × ${product.name} to cart!`)
+  const handleAddToCart = async () => {
+    try {
+      if (cartItem) {
+        // Update existing cart item
+        await updateQuantity(product.product_id, quantity)
+        success(`Updated ${product.name} quantity to ${quantity}!`)
+      } else {
+        // Add new item to cart
+        await addToCart(product, quantity)
+        success(`Added ${quantity} × ${product.name} to cart!`)
+      }
+    } catch (err) {
+      console.error('❌ Failed to update cart:', err)
     }
   }
 
-  const handleBuyNow = () => {
-    if (cartItem) {
-      updateQuantity(product.product_id, quantity)
-    } else {
-      addToCart(product, quantity)
+  const handleBuyNow = async () => {
+    try {
+      if (cartItem) {
+        await updateQuantity(product.product_id, quantity)
+      } else {
+        await addToCart(product, quantity)
+      }
+      success(`Added ${quantity} × ${product.name} to cart!`)
+      navigate('/cart')
+    } catch (err) {
+      console.error('❌ Failed to update cart:', err)
     }
-    success(`Added ${quantity} × ${product.name} to cart!`)
-    navigate('/cart')
   }
 
   const handleChatWithAI = async () => {
@@ -102,8 +122,6 @@ ${product.description ? `Description: ${product.description}` : ''}
 
 Please provide detailed information, comparisons with similar products, buying advice, and answer any questions I might have about this product.`
 
-    console.log('🤖 Opening AI assistant with product context')
-    
     // Open assistant immediately
     openAssistant()
     
@@ -121,40 +139,19 @@ Please provide detailed information, comparisons with similar products, buying a
       source: 'product-page'
     })
     
-    // Send to backend
-    setLoadingChat(true)
     try {
-      const sessionId = getSessionId()
-      const response = await sendChatMessage({
-        user_id: 'user_' + Math.random().toString(36).substr(2, 9),
-        session_id: sessionId,
+      await sendChatWithStore({
         message: contextMessage,
-        channel: 'web'
-      })
-
-      // Add assistant response
-      addMessage({
-        role: 'assistant',
-        content: response.reply,
-        agent: response.agent_used,
-        actions: response.actions,
-        source: 'product-page'
-      })
-    } catch (error) {
-      console.error('Error sending product context:', error)
-      const status = error?.status
-      const fallbackMessage = status === 429
-        ? 'We are getting a lot of requests. Please try again shortly.'
-        : status === 401
-        ? 'Chat is unavailable. Missing or invalid API key.'
-        : 'I received your product inquiry. How can I assist you?'
-      addMessage({
-        role: 'assistant',
-        content: fallbackMessage,
-        source: 'product-page'
+        user,
+        source: 'product-page',
+        getSessionId,
+        startRequest,
+        finishRequest,
+        addMessage,
+        getStoreState: useChatStore.getState,
+        setMessages
       })
     } finally {
-      setLoadingChat(false)
       setIsSendingToAI(false)
     }
   }

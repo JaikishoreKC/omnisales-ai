@@ -4,7 +4,7 @@ from app.repositories.product_repository import find_products
 import re
 
 
-async def recommend_products(user_id: str, session_id: str, message: str = "") -> List[Dict[str, Any]]:
+async def recommend_products(user_id: str, message: str = "") -> List[Dict[str, Any]]:
     user = await get_user(user_id)
     preferences = user.get("preferences", {}) if user else {}
     
@@ -46,9 +46,14 @@ async def recommend_products(user_id: str, session_id: str, message: str = "") -
     
     return [
         {
+            "product_id": p.get("product_id"),
             "name": p.get("name"),
             "price": p.get("price"),
-            "category": p.get("category")
+            "category": p.get("category"),
+            "stock": p.get("stock", 0),
+            "image": p.get("image"),
+            "description": p.get("description"),
+            "rating": p.get("rating"),
         }
         for p in products
     ]

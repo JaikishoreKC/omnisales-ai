@@ -61,7 +61,7 @@ const CheckoutPage = () => {
         shipping_address: shippingInfo
       }, token)
 
-      clearCart()
+      await clearCart()
       navigate(`/orders/${data.order_id}`)
     } catch (err) {
       setError(err.message || 'Failed to place order. Please try again.')

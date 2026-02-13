@@ -29,13 +29,16 @@ async def initiate_return(order_id: str, reason: str, items: list = None) -> Dic
         "created_at": datetime.utcnow()
     }
     
-    await db.returns.insert_one(return_doc)
-    
+    result = await db.returns.insert_one(return_doc)
+    if not result.inserted_id:
+        return {"success": False, "error": "Return request failed", "verified": False}
+
     return {
         "success": True,
         "return_id": return_id,
         "status": "requested",
-        "estimated_refund": order.get("total_price")
+        "estimated_refund": order.get("total_price"),
+        "verified": True
     }
 
 
@@ -52,10 +55,12 @@ async def request_refund(order_id: str) -> Dict[str, Any]:
     db = get_database()
     
     # Cancel order and create refund
-    await db.orders.update_one(
+    update_result = await db.orders.update_one(
         {"order_id": order_id},
         {"$set": {"status": "cancelled"}}
     )
+    if update_result.modified_count == 0:
+        return {"success": False, "error": "Refund request failed", "verified": False}
     
     refund_id = f"REF-{order_id[:8]}"
     refund_doc = {
@@ -66,13 +71,16 @@ async def request_refund(order_id: str) -> Dict[str, Any]:
         "created_at": datetime.utcnow()
     }
     
-    await db.refunds.insert_one(refund_doc)
-    
+    refund_result = await db.refunds.insert_one(refund_doc)
+    if not refund_result.inserted_id:
+        return {"success": False, "error": "Refund request failed", "verified": False}
+
     return {
         "success": True,
         "refund_id": refund_id,
         "amount": order.get("total_price"),
-        "estimated_days": "5-7 business days"
+        "estimated_days": "5-7 business days",
+        "verified": True
     }
 
 
@@ -97,11 +105,14 @@ async def report_issue(order_id: str, issue_type: str, description: str) -> Dict
         "created_at": datetime.utcnow()
     }
     
-    await db.tickets.insert_one(ticket_doc)
-    
+    ticket_result = await db.tickets.insert_one(ticket_doc)
+    if not ticket_result.inserted_id:
+        return {"success": False, "error": "Issue report failed", "verified": False}
+
     return {
         "success": True,
         "ticket_id": ticket_id,
         "status": "open",
-        "estimated_response": "24 hours"
+        "estimated_response": "24 hours",
+        "verified": True
     }

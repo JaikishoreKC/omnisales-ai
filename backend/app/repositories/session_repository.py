@@ -5,15 +5,32 @@ from app.core.database import get_database
 MAX_MESSAGES = 5
 
 
-async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+async def get_session(session_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     db = get_database()
-    return await db.sessions.find_one({"session_id": session_id})
+    query = {"session_id": session_id}
+    if user_id:
+        query["user_id"] = user_id
+    return await db.sessions.find_one(query)
 
 
-async def save_message(session_id: str, role: str, text: str) -> None:
+async def save_message(
+    session_id: str,
+    user_id: str,
+    role: str,
+    text: str,
+    agent: Optional[str] = None,
+    actions: Optional[List[Dict[str, Any]]] = None
+) -> None:
     db = get_database()
-    session = await db.sessions.find_one({"session_id": session_id}, {"last_messages": 1})
+    if text is None:
+        text = ""
+    session = await db.sessions.find_one(
+        {"session_id": session_id},
+        {"last_messages": 1}
+    )
     if session:
+        if session.get("user_id") and session.get("user_id") != user_id:
+            return
         last_messages = session.get("last_messages", [])
         if last_messages:
             last = last_messages[-1]
@@ -23,15 +40,30 @@ async def save_message(session_id: str, role: str, text: str) -> None:
     message = {
         "role": role,
         "text": text,
+        "content": text,
         "timestamp": datetime.utcnow().isoformat()
     }
+    if agent:
+        message["agent"] = agent
+    if actions:
+        safe_actions = [a for a in actions if isinstance(a, dict)]
+        if safe_actions:
+            message["actions"] = safe_actions
     await db.sessions.update_one(
         {"session_id": session_id},
         {
+            "$setOnInsert": {
+                "session_id": session_id,
+                "user_id": user_id
+            },
             "$push": {
                 "last_messages": {
                     "$each": [message],
                     "$slice": -MAX_MESSAGES
+                },
+                "all_messages": {
+                    "$each": [message],
+                    "$slice": -200
                 }
             },
             "$set": {"updated_at": datetime.utcnow()}
@@ -40,33 +72,31 @@ async def save_message(session_id: str, role: str, text: str) -> None:
     )
 
 
-async def get_last_messages(session_id: str) -> List[Dict[str, str]]:
-    session = await get_session(session_id)
+async def get_last_messages(session_id: str, user_id: str) -> List[Dict[str, str]]:
+    session = await get_session(session_id, user_id)
     if not session:
         return []
     return session.get("last_messages", [])
 
 
-async def update_summary(session_id: str, summary_text: str) -> None:
+async def get_chat_history(session_id: str, user_id: str, limit: int = 200) -> List[Dict[str, str]]:
+    db = get_database()
+    limit = max(1, min(limit, 500))
+    session = await db.sessions.find_one(
+        {"session_id": session_id, "user_id": user_id},
+        {"all_messages": {"$slice": -limit}}
+    )
+    if not session:
+        return []
+    return session.get("all_messages", [])
+
+
+async def update_summary(session_id: str, user_id: str, summary_text: str) -> None:
     db = get_database()
     await db.sessions.update_one(
-        {"session_id": session_id},
+        {"session_id": session_id, "user_id": user_id},
         {"$set": {"summary": summary_text, "updated_at": datetime.utcnow()}},
         upsert=True
     )
 
 
-async def get_cart(session_id: str) -> List[Dict[str, Any]]:
-    session = await get_session(session_id)
-    if not session:
-        return []
-    return session.get("cart_items", [])
-
-
-async def update_cart(session_id: str, items: List[Dict[str, Any]]) -> None:
-    db = get_database()
-    await db.sessions.update_one(
-        {"session_id": session_id},
-        {"$set": {"cart_items": items, "updated_at": datetime.utcnow()}},
-        upsert=True
-    )
